@@ -45,26 +45,27 @@ def run_with_fallback(
     hashtag_instruction: str,
     backend: str,
     config: dict[str, Any] | None = None,
+    mode: str = "scientific",
+    sentence_count: int = 5,
 ) -> tuple[Optional[str], str]:
     """Run summarization with optional fallback chain.
 
     Returns (response_text, backend_used) or (None, "") on complete failure.
-
-    backend="auto": tries gemini → lemonade → ollama → extractive.
-    backend=explicit: single attempt, no fallback.
     """
     if backend == "auto":
         for i, name in enumerate(_AUTO_ORDER):
             if i > 0:
                 logger.warning(f"Summarizer: falling back to {name}")
             b = get_backend(name, config)
-            result = b.summarize(text, max_chars, focus, hashtag_instruction)
+            result = b.summarize(text, max_chars, focus, hashtag_instruction,
+                                 mode=mode, sentence_count=sentence_count)
             if result:
                 return result, name
         return None, ""
     else:
         b = get_backend(backend, config)
-        result = b.summarize(text, max_chars, focus, hashtag_instruction)
+        result = b.summarize(text, max_chars, focus, hashtag_instruction,
+                             mode=mode, sentence_count=sentence_count)
         if result:
             return result, backend
         return None, ""

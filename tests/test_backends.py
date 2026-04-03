@@ -144,7 +144,7 @@ class TestRunWithFallback:
             run_with_fallback("text", 500, "", "", "nonexistent")
 
     def test_document_delimiters_in_prompt(self):
-        """FR-16: shared prompt template contains <document> delimiters."""
-        from tldr_scholar.backends.base import SUMMARY_PROMPT_TEMPLATE
-        assert "<document>" in SUMMARY_PROMPT_TEMPLATE
-        assert "</document>" in SUMMARY_PROMPT_TEMPLATE
+        """FR-16: single-prompt template contains <document> delimiters."""
+        from tldr_scholar.prompts import SINGLE_PROMPT_TEMPLATE
+        assert "<document>" in SINGLE_PROMPT_TEMPLATE
+        assert "</document>" in SINGLE_PROMPT_TEMPLATE

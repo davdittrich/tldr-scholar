@@ -5,15 +5,6 @@ from abc import ABC, abstractmethod
 from typing import Optional
 
 
-SUMMARY_PROMPT_TEMPLATE = (
-    "Summarize the following document in approximately {max_chars} characters.\n"
-    "Focus on: {focus}.\n"
-    "Be concise, precise, and factual. Do not add information not in the source.\n"
-    "{hashtag_instruction}\n\n"
-    "<document>\n{text}\n</document>"
-)
-
-
 class BackendBase(ABC):
     """Abstract interface for summarization backends.
 
@@ -24,7 +15,6 @@ class BackendBase(ABC):
 
     For the extractive backend: hashtag_instruction is ignored. Hashtags
     are generated separately by the caller via generate_hashtags_tfidf().
-    The response contains only the summary text.
     """
 
     @abstractmethod
@@ -34,5 +24,7 @@ class BackendBase(ABC):
         max_chars: int,
         focus: str,
         hashtag_instruction: str,
+        mode: str = "scientific",
+        sentence_count: int = 5,
     ) -> Optional[str]:
         """Summarize text. Returns response string or None on failure."""

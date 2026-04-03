@@ -11,6 +11,7 @@ import httpx
 from loguru import logger
 
 from tldr_scholar.backends.base import BackendBase
+from tldr_scholar.prompts import build_system_prompt
 
 _MODEL_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 _cached_model: Optional[str] = None
@@ -36,7 +37,8 @@ class LemonadeBackend(BackendBase):
         ])
 
     def summarize(self, text: str, max_chars: int, focus: str,
-                  hashtag_instruction: str) -> Optional[str]:
+                  hashtag_instruction: str, mode: str = "scientific",
+                  sentence_count: int = 5) -> Optional[str]:
         model = self._model
         if not model:
             model = _ensure_model(
@@ -47,12 +49,10 @@ class LemonadeBackend(BackendBase):
                 logger.debug("No Lemonade model available")
                 return None
 
-        system_msg = (
-            f"Summarize the following document in approximately {max_chars} characters.\n"
-            f"Focus on: {focus}.\n"
-            "Be concise, precise, and factual. Do not add information not in the source.\n"
-            f"{hashtag_instruction}"
-        ).strip()
+        system_msg = build_system_prompt(
+            mode=mode, max_chars=max_chars, focus=focus,
+            hashtag_instruction=hashtag_instruction, sentence_count=sentence_count,
+        )
         try:
             response = httpx.post(
                 f"{self._host}/v1/chat/completions",

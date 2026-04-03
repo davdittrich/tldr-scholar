@@ -34,8 +34,9 @@ class ExtractiveBackend(BackendBase):
         self._max_sentences = cfg.get("max_sentences", 5)
 
     def summarize(self, text: str, max_chars: int, focus: str,
-                  hashtag_instruction: str) -> Optional[str]:
-        """Extractive summarization. hashtag_instruction is ignored."""
+                  hashtag_instruction: str, mode: str = "scientific",
+                  sentence_count: int = 5) -> Optional[str]:
+        """Extractive summarization. hashtag_instruction, mode, sentence_count ignored."""
         parser = PlaintextParser.from_string(text, Tokenizer(_LANGUAGE))
         sc = len(parser.document.sentences)
         if sc < _MIN_SENTENCES:

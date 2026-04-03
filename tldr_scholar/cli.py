@@ -13,6 +13,7 @@ from loguru import logger
 
 from tldr_scholar import summarize_file, summarize_url
 from tldr_scholar.config import load_config
+from tldr_scholar.prompts import SENTENCE_COUNTS
 from tldr_scholar.ingest import EmptyTextError, PasswordProtectedError, UnsupportedInputError
 
 app = typer.Typer(help="Academic text summarizer — PDF, URL, Markdown, text.")
@@ -30,6 +31,7 @@ def main(
     output_format: str = typer.Option("text", "--format", help="text|json|markdown"),
     backend: str = typer.Option("auto", "--backend",
                                 help="gemini|lemonade|ollama|extractive|auto"),
+    mode: str = typer.Option("scientific", "--mode", help="scientific|general"),
     config: Optional[Path] = typer.Option(None, "--config", help="Config file path"),
     verbose: bool = typer.Option(False, "--verbose"),
     quiet: bool = typer.Option(False, "--quiet"),
@@ -39,6 +41,11 @@ def main(
     valid_backends = {"auto", "gemini", "lemonade", "ollama", "extractive"}
     if backend not in valid_backends:
         typer.echo(f"Invalid backend '{backend}'. Choose from: {', '.join(sorted(valid_backends))}", err=True)
+        raise typer.Exit(code=2)
+
+    # Validate mode
+    if mode not in ("scientific", "general"):
+        typer.echo(f"Invalid mode '{mode}'. Choose: scientific, general", err=True)
         raise typer.Exit(code=2)
 
     # Validate format
@@ -60,6 +67,18 @@ def main(
         typer.echo(f"Invalid length '{length}'. Choose: short, medium, long", err=True)
         raise typer.Exit(code=2)
 
+    # Compute sentence count from length preset
+    length_key = "medium"
+    if max_chars is not None:
+        # Map max_chars to nearest length preset for sentence count
+        if effective_max_chars <= 250:
+            length_key = "short"
+        elif effective_max_chars >= 750:
+            length_key = "long"
+    else:
+        length_key = length
+    sentence_count = SENTENCE_COUNTS.get(length_key, 5)
+
     # Load config — dict-of-dicts keyed by backend name so auto mode
     # doesn't merge conflicting hosts/models across backends
     config_path = config or os.environ.get("TLDR_SCHOLAR_CONFIG")
@@ -79,11 +98,13 @@ def main(
             result = summarize_url(
                 source, max_chars=effective_max_chars, focus=focus,
                 hashtags=hashtags, backend=backend, backend_config=backend_config,
+                mode=mode, sentence_count=sentence_count,
             )
         else:
             result = summarize_file(
                 source, max_chars=effective_max_chars, focus=focus,
                 hashtags=hashtags, backend=backend, backend_config=backend_config,
+                mode=mode, sentence_count=sentence_count,
             )
     except UnsupportedInputError as e:
         typer.echo(f"Error: {e}", err=True)

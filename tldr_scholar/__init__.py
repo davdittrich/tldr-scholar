@@ -46,6 +46,8 @@ def summarize(
     hashtags: int = 0,
     backend: str = "auto",
     backend_config: dict[str, Any] | None = None,
+    mode: str = "scientific",
+    sentence_count: int = 5,
 ) -> SummaryResult:
     """Summarize text. Accepts either text= or request=, not both.
 
@@ -76,6 +78,8 @@ def summarize(
         hashtag_instruction=hashtag_instruction,
         backend=req.backend,
         config=req.backend_config if req.backend_config else None,
+        mode=mode,
+        sentence_count=sentence_count,
     )
 
     if not response:
