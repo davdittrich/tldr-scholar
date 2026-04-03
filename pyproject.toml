@@ -18,7 +18,7 @@ dependencies = [
     "lxml",
     "PyMuPDF",
     "pymupdf4llm",
-    "gemini-acp @ file:../gemini-acp",
+    "gemini-acp @ git+https://github.com/davdittrich/gemini-acp.git",
 ]
 
 [project.optional-dependencies]
