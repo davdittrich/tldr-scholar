@@ -6,6 +6,7 @@ import os
 import sys
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 import typer
 from loguru import logger
@@ -13,7 +14,6 @@ from loguru import logger
 from tldr_scholar import summarize_file, summarize_url
 from tldr_scholar.config import load_config
 from tldr_scholar.ingest import EmptyTextError, PasswordProtectedError, UnsupportedInputError
-from tldr_scholar.models import SummaryRequest
 
 app = typer.Typer(help="Academic text summarizer — PDF, URL, Markdown, text.")
 
@@ -74,7 +74,6 @@ def main(
 
     # Run summarization
     try:
-        from urllib.parse import urlparse
         parsed = urlparse(source)
         if parsed.scheme in ("http", "https"):
             result = summarize_url(

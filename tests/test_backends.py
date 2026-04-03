@@ -72,6 +72,28 @@ class TestLemonadeBackend:
         assert "summary" in result
 
     @respx.mock
+    def test_sends_system_and_user_messages(self):
+        """OpenAI spec: messages must include both system and user roles."""
+        captured = {}
+        def _capture(request):
+            captured["body"] = request.content
+            return httpx.Response(200, json={
+                "choices": [{"message": {"content": "Summary."}}]
+            })
+        respx.post("http://127.0.0.1:8000/v1/chat/completions").mock(side_effect=_capture)
+        b = LemonadeBackend({"model": "test-model", "host": "http://127.0.0.1:8000"})
+        b.summarize("Document text here.", 500, "insights", "Generate 3 hashtags.")
+        import json
+        body = json.loads(captured["body"])
+        messages = body["messages"]
+        roles = [m["role"] for m in messages]
+        assert "system" in roles
+        assert "user" in roles
+        # User message contains the document text
+        user_msg = next(m for m in messages if m["role"] == "user")
+        assert "Document text here." in user_msg["content"]
+
+    @respx.mock
     def test_returns_none_on_failure(self):
         respx.post("http://127.0.0.1:8000/v1/chat/completions").mock(
             return_value=httpx.Response(500, text="error")

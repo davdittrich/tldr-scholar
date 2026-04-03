@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Optional
 from urllib.parse import urlparse
 
 import httpx
@@ -61,10 +60,20 @@ def ingest(source: str) -> tuple[str, str]:
     return text, input_type
 
 
+def _pdf_doc_to_text(doc, max_pages: int = 20) -> str:
+    """Convert an open fitz.Document to text. Lazy-imports pymupdf4llm."""
+    import pymupdf4llm
+    pages = list(range(min(max_pages, len(doc))))
+    try:
+        text = pymupdf4llm.to_markdown(doc, pages=pages)
+    except Exception:
+        return ""
+    return text.strip() if text else ""
+
+
 def _ingest_pdf(path: Path) -> str:
     """Extract text from PDF (first 20 pages). Detects password-protected PDFs."""
     import fitz
-    import pymupdf4llm
 
     pdf_bytes = path.read_bytes()
     if len(pdf_bytes) > _MAX_INPUT_BYTES:
@@ -81,15 +90,7 @@ def _ingest_pdf(path: Path) -> str:
     if doc.is_encrypted:
         raise PasswordProtectedError(f"PDF is password-protected: {path}")
 
-
-    page_count = len(doc)
-    pages = list(range(min(20, page_count)))
-    try:
-        text = pymupdf4llm.to_markdown(doc, pages=pages)
-    except Exception:
-        return ""
-
-    return text.strip() if text else ""
+    return _pdf_doc_to_text(doc)
 
 
 def _ingest_url(url: str) -> tuple[str, str]:
@@ -121,17 +122,15 @@ def _ingest_url(url: str) -> tuple[str, str]:
             raise EmptyTextError(f"Failed to download PDF from {url}: {e}")
 
         import fitz
-        import pymupdf4llm
         try:
             doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-            pages = list(range(min(20, len(doc))))
-            text = pymupdf4llm.to_markdown(doc, pages=pages)
         except Exception:
-            text = ""
+            raise EmptyTextError(f"Failed to parse PDF from {url}")
 
-        if not text or not text.strip():
+        text = _pdf_doc_to_text(doc)
+        if not text:
             raise EmptyTextError(f"No text could be extracted from {url}")
-        return text.strip(), "pdf"
+        return text, "pdf"
     else:
         # HTML — streaming fetch with size cap
         try:

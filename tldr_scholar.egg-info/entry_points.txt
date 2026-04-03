@@ -1,0 +1,2 @@
+[console_scripts]
+tldr-scholar = tldr_scholar.cli:app

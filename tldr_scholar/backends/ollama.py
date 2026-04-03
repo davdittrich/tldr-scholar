@@ -29,5 +29,6 @@ class OllamaBackend(BackendBase):
                 timeout=self._timeout,
             )
             return response.json()["response"].strip() or None
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Ollama request failed: {e}")
             return None
