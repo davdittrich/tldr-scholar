@@ -81,6 +81,13 @@ class TestFetchHtml:
             from tldr_scholar.ingest import _fetch_html
             _fetch_html("https://example.com")
             mock_curl.Session.assert_called_once_with(impersonate="chrome124")
+            from tldr_scholar.ingest import _BROWSER_HEADERS
+            mock_session.get.assert_called_once_with(
+                "https://example.com",
+                headers=_BROWSER_HEADERS,
+                timeout=15,
+                allow_redirects=True,
+            )
 
 
 class TestFileSizeLimit:
