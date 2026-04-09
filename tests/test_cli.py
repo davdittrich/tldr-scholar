@@ -175,6 +175,17 @@ class TestCliEnvVar:
             result = runner.invoke(app, [str(f)])
         assert result.exit_code == 0
 
+    def test_oa_config_email_in_backend_config(self, tmp_path, monkeypatch):
+        config_file = tmp_path / "cfg.toml"
+        config_file.write_text('[oa]\nemail = "test@example.com"\n')
+        monkeypatch.setenv("TLDR_SCHOLAR_CONFIG", str(config_file))
+        f = tmp_path / "test.txt"
+        f.write_text("text")
+        with patch("tldr_scholar.cli.summarize_file") as mock_fn:
+            mock_fn.return_value = _mock_result()
+            runner.invoke(app, [str(f)])
+            assert mock_fn.call_args[1]["backend_config"]["oa"]["email"] == "test@example.com"
+
 
 class TestExtractiveHashtags:
     def test_extractive_backend_with_hashtags(self, tmp_path):

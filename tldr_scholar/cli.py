@@ -93,6 +93,7 @@ def main(
             "gemini": cfg.gemini.model_dump(),
             "lemonade": cfg.lemonade.model_dump(),
             "ollama": cfg.ollama.model_dump(),
+            "oa": cfg.oa.model_dump(),
         }
     if gemini_timeout is not None:
         backend_config.setdefault("gemini", {})["timeout"] = gemini_timeout

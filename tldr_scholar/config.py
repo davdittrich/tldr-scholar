@@ -35,10 +35,15 @@ class OllamaConfig(BaseModel):
     timeout: int = 30
 
 
+class OAConfig(BaseModel):
+    email: str = ""
+
+
 class TldrScholarConfig(BaseModel):
     gemini: GeminiConfig = GeminiConfig()
     lemonade: LemonadeConfig = LemonadeConfig()
     ollama: OllamaConfig = OllamaConfig()
+    oa: OAConfig = OAConfig()
 
 
 def load_config(path: Path) -> TldrScholarConfig:
