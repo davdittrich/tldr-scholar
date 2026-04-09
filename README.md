@@ -97,6 +97,7 @@ tldr-scholar [OPTIONS] SOURCE
 | `--backend` | `auto` | `gemini`, `lemonade`, `ollama`, `extractive`, `auto` |
 | `--mode` | `scientific` | Prompt mode: `scientific` (IMRAD-aware) or `general` |
 | `--config` | — | Path to TOML config file |
+| `--gemini-timeout` | `90` | Override Gemini request timeout in seconds |
 | `--verbose` | off | DEBUG logging |
 | `--quiet` | off | Suppress INFO, show WARNING only |
 
@@ -259,7 +260,7 @@ export TLDR_SCHOLAR_CONFIG=path/to/tldr-scholar.toml
 ```toml
 [gemini]
 model = "gemini-3-flash-preview"
-timeout = 30
+timeout = 90
 
 [lemonade]
 model = ""                              # empty = auto-detect
