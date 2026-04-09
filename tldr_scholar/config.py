@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 class GeminiConfig(BaseModel):
     model: str = ""
-    timeout: int = 30
+    timeout: int = 90
 
 
 class LemonadeConfig(BaseModel):

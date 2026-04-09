@@ -183,3 +183,9 @@ class TestExtractiveHashtags:
         with patch("tldr_scholar.cli.summarize_file", return_value=mock):
             result = runner.invoke(app, [str(f), "--backend", "extractive", "--hashtags", "3"])
         assert result.exit_code == 0
+
+
+class TestGeminiTimeout:
+    def test_config_default_timeout_is_90(self):
+        from tldr_scholar.config import GeminiConfig
+        assert GeminiConfig().timeout == 90
