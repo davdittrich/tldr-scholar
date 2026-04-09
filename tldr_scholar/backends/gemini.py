@@ -13,7 +13,7 @@ class GeminiBackend(BackendBase):
     def __init__(self, config: dict[str, Any] | None = None):
         cfg = config or {}
         self._model = cfg.get("model", "")
-        self._timeout = cfg.get("timeout", 30)
+        self._timeout = cfg.get("timeout", 90)
 
     def summarize(self, text: str, max_chars: int, focus: str,
                   hashtag_instruction: str, mode: str = "scientific",

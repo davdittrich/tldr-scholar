@@ -190,6 +190,11 @@ class TestGeminiTimeout:
     def test_config_default_timeout_is_90(self):
         assert GeminiConfig().timeout == 90
 
+    def test_gemini_backend_default_timeout_is_90(self):
+        from tldr_scholar.backends.gemini import GeminiBackend
+        backend = GeminiBackend({})
+        assert backend._timeout == 90
+
     def test_gemini_timeout_flag_sets_backend_config(self, tmp_path):
         f = tmp_path / "test.txt"
         f.write_text("text")
