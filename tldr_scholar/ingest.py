@@ -138,6 +138,17 @@ def _ingest_url(url: str) -> tuple[str, str]:
         except Exception as e:
             raise EmptyTextError(f"Failed to download PDF from {url}: {e}")
 
+        # Detect if the server returned HTML instead of a PDF (JS gate, auth wall)
+        if not pdf_bytes.lstrip()[:5].startswith(b'%PDF-'):
+            html = pdf_bytes.decode("utf-8", errors="replace")
+            if any(pat in html.lower() for pat in _JS_GATE_PATTERNS):
+                raise EmptyTextError(
+                    f"Publisher requires JavaScript/authentication — direct PDF access is blocked: {url}"
+                )
+            raise EmptyTextError(
+                f"URL returned non-PDF content (likely an auth wall or redirect): {url}"
+            )
+
         import fitz
         try:
             doc = fitz.open(stream=pdf_bytes, filetype="pdf")
