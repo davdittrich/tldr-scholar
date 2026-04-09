@@ -4,9 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import httpx
 import pytest
-import respx
 
 from tldr_scholar.ingest import (
     ingest,
@@ -52,17 +50,11 @@ class TestIngestFile:
 
 
 class TestIngestUrl:
-    @respx.mock
     def test_html_url(self):
-        respx.head("https://example.com/article").mock(
-            return_value=httpx.Response(200, headers={"content-type": "text/html"})
-        )
-        respx.route(method="GET", url="https://example.com/article").mock(
-            return_value=httpx.Response(200, text="<html><body><p>Research findings show X.</p></body></html>")
-        )
-        with patch("tldr_scholar.ingest.trafilatura") as mock_traf:
-            mock_traf.extract.return_value = "Research findings show X."
-            text, input_type = ingest("https://example.com/article")
+        with patch("tldr_scholar.ingest._fetch_html", return_value="<html><body><p>Research findings.</p></body></html>"):
+            with patch("tldr_scholar.ingest.trafilatura") as mock_traf:
+                mock_traf.extract.return_value = "Research findings show X."
+                text, input_type = ingest("https://example.com/article")
         assert input_type == "html"
         assert "Research findings" in text
 
@@ -70,18 +62,25 @@ class TestIngestUrl:
         with pytest.raises(UnsupportedInputError, match="Unsupported URL scheme"):
             ingest("ftp://example.com/file")
 
-    @respx.mock
     def test_empty_html_extraction(self):
-        respx.head("https://example.com/empty").mock(
-            return_value=httpx.Response(200, headers={"content-type": "text/html"})
-        )
-        respx.route(method="GET", url="https://example.com/empty").mock(
-            return_value=httpx.Response(200, text="<html></html>")
-        )
-        with patch("tldr_scholar.ingest.trafilatura") as mock_traf:
-            mock_traf.extract.return_value = None
-            with pytest.raises(EmptyTextError):
-                ingest("https://example.com/empty")
+        with patch("tldr_scholar.ingest._fetch_html", return_value="<html></html>"):
+            with patch("tldr_scholar.ingest.trafilatura") as mock_traf:
+                mock_traf.extract.return_value = None
+                with pytest.raises(EmptyTextError):
+                    ingest("https://example.com/empty")
+
+
+class TestFetchHtml:
+    def test_uses_curl_cffi_impersonation(self):
+        """_fetch_html must call curl_cffi with impersonate='chrome124'."""
+        with patch("tldr_scholar.ingest.curl_requests") as mock_curl:
+            mock_session = MagicMock()
+            mock_curl.Session.return_value.__enter__ = MagicMock(return_value=mock_session)
+            mock_curl.Session.return_value.__exit__ = MagicMock(return_value=False)
+            mock_session.get.return_value.text = "<html>text</html>"
+            from tldr_scholar.ingest import _fetch_html
+            _fetch_html("https://example.com")
+            mock_curl.Session.assert_called_once_with(impersonate="chrome124")
 
 
 class TestFileSizeLimit:

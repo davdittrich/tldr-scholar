@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 
 import httpx
 import trafilatura
+from curl_cffi import requests as curl_requests
 from loguru import logger
 
 # fitz and pymupdf4llm are heavy C-extension imports (~200ms).
@@ -110,6 +111,13 @@ def _ingest_pdf(path: Path) -> str:
     return _pdf_doc_to_text(doc)
 
 
+def _fetch_html(url: str) -> str:
+    """Fetch URL HTML with Chrome TLS impersonation via curl-cffi."""
+    with curl_requests.Session(impersonate="chrome124") as session:
+        resp = session.get(url, headers=_BROWSER_HEADERS, timeout=15, allow_redirects=True)
+        return resp.text
+
+
 def _ingest_url(url: str) -> tuple[str, str]:
     """Fetch URL, detect type, extract text. Returns (text, input_type)."""
     parsed = urlparse(url)
@@ -160,19 +168,9 @@ def _ingest_url(url: str) -> tuple[str, str]:
             raise EmptyTextError(f"No text could be extracted from {url}")
         return text, "pdf"
     else:
-        # HTML — streaming fetch with size cap
+        # HTML — fetch with Chrome TLS impersonation
         try:
-            with httpx.Client(timeout=10, follow_redirects=True, headers=_BROWSER_HEADERS) as client:
-                with client.stream("GET", url) as resp:
-                    chunks: list[str] = []
-                    total = 0
-                    for chunk in resp.iter_text(4096):
-                        total += len(chunk.encode("utf-8"))
-                        if total > _MAX_INPUT_BYTES:
-                            logger.warning(f"HTML from {url} exceeds {_MAX_INPUT_BYTES} bytes, truncating")
-                            break
-                        chunks.append(chunk)
-                html = "".join(chunks)
+            html = _fetch_html(url)
         except Exception as e:
             raise EmptyTextError(f"Failed to fetch {url}: {e}")
 
