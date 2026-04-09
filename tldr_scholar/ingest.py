@@ -14,6 +14,23 @@ from loguru import logger
 
 _MAX_INPUT_BYTES = 5_000_000  # 5 MB cap
 
+_BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+}
+
+_JS_GATE_PATTERNS = [
+    "enable javascript",
+    "javascript is disabled",
+    "please enable javascript",
+    "you need to enable javascript",
+    "javascript and cookies",
+]
+
 
 class UnsupportedInputError(Exception):
     """Raised when input type is not supported."""
@@ -102,7 +119,7 @@ def _ingest_url(url: str) -> tuple[str, str]:
     # Detect content type
     content_type = ""
     try:
-        with httpx.Client(timeout=10, follow_redirects=True) as client:
+        with httpx.Client(timeout=10, follow_redirects=True, headers=_BROWSER_HEADERS) as client:
             head = client.head(url)
             content_type = head.headers.get("content-type", "")
     except Exception:
@@ -113,7 +130,7 @@ def _ingest_url(url: str) -> tuple[str, str]:
     if is_pdf:
         # Download PDF bytes
         try:
-            resp = httpx.get(url, follow_redirects=True, timeout=30)
+            resp = httpx.get(url, follow_redirects=True, timeout=30, headers=_BROWSER_HEADERS)
             pdf_bytes = resp.content
             if len(pdf_bytes) > _MAX_INPUT_BYTES:
                 logger.warning(f"PDF from {url} exceeds {_MAX_INPUT_BYTES} bytes, truncating")
@@ -134,7 +151,7 @@ def _ingest_url(url: str) -> tuple[str, str]:
     else:
         # HTML — streaming fetch with size cap
         try:
-            with httpx.Client(timeout=10, follow_redirects=True) as client:
+            with httpx.Client(timeout=10, follow_redirects=True, headers=_BROWSER_HEADERS) as client:
                 with client.stream("GET", url) as resp:
                     chunks: list[str] = []
                     total = 0
@@ -153,7 +170,13 @@ def _ingest_url(url: str) -> tuple[str, str]:
                                    include_comments=False, include_tables=True)
         if not text or not text.strip():
             raise EmptyTextError(f"No text could be extracted from {url}")
-        return text.strip(), "html"
+        text = text.strip()
+        lower = text.lower()
+        if any(pat in lower for pat in _JS_GATE_PATTERNS):
+            raise EmptyTextError(
+                f"Page requires JavaScript to render — try the PDF URL directly: {url}"
+            )
+        return text, "html"
 
 
 def _ingest_markdown(path: Path) -> str:
