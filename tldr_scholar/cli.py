@@ -33,6 +33,10 @@ def main(
                                 help="gemini|lemonade|ollama|extractive|auto"),
     mode: str = typer.Option("scientific", "--mode", help="scientific|general"),
     config: Optional[Path] = typer.Option(None, "--config", help="Config file path"),
+    gemini_timeout: Optional[int] = typer.Option(
+        None, "--gemini-timeout",
+        help="Override Gemini request timeout in seconds (default: 90)",
+    ),
     verbose: bool = typer.Option(False, "--verbose"),
     quiet: bool = typer.Option(False, "--quiet"),
 ) -> None:
@@ -90,6 +94,8 @@ def main(
             "lemonade": cfg.lemonade.model_dump(),
             "ollama": cfg.ollama.model_dump(),
         }
+    if gemini_timeout is not None:
+        backend_config.setdefault("gemini", {})["timeout"] = gemini_timeout
 
     # Run summarization
     try:

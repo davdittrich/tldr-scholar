@@ -7,6 +7,7 @@ from unittest.mock import patch
 from typer.testing import CliRunner
 
 from tldr_scholar.cli import app
+from tldr_scholar.config import GeminiConfig
 from tldr_scholar.models import SummaryMetadata, SummaryResult
 
 runner = CliRunner()
@@ -187,5 +188,35 @@ class TestExtractiveHashtags:
 
 class TestGeminiTimeout:
     def test_config_default_timeout_is_90(self):
-        from tldr_scholar.config import GeminiConfig
         assert GeminiConfig().timeout == 90
+
+    def test_gemini_timeout_flag_sets_backend_config(self, tmp_path):
+        f = tmp_path / "test.txt"
+        f.write_text("text")
+        with patch("tldr_scholar.cli.summarize_file") as mock_fn:
+            mock_fn.return_value = _mock_result()
+            runner.invoke(app, [str(f), "--gemini-timeout", "120"])
+            call_kwargs = mock_fn.call_args[1]
+            assert call_kwargs["backend_config"].get("gemini", {}).get("timeout") == 120
+
+    def test_gemini_timeout_flag_overrides_config_file(self, tmp_path):
+        config_file = tmp_path / "cfg.toml"
+        config_file.write_text("[gemini]\ntimeout = 45\n")
+        f = tmp_path / "test.txt"
+        f.write_text("text")
+        with patch("tldr_scholar.cli.summarize_file") as mock_fn:
+            mock_fn.return_value = _mock_result()
+            runner.invoke(app, [str(f), "--config", str(config_file), "--gemini-timeout", "200"])
+            call_kwargs = mock_fn.call_args[1]
+            assert call_kwargs["backend_config"]["gemini"]["timeout"] == 200
+
+    def test_gemini_timeout_absent_preserves_config_value(self, tmp_path):
+        config_file = tmp_path / "cfg.toml"
+        config_file.write_text("[gemini]\ntimeout = 45\n")
+        f = tmp_path / "test.txt"
+        f.write_text("text")
+        with patch("tldr_scholar.cli.summarize_file") as mock_fn:
+            mock_fn.return_value = _mock_result()
+            runner.invoke(app, [str(f), "--config", str(config_file)])
+            call_kwargs = mock_fn.call_args[1]
+            assert call_kwargs["backend_config"]["gemini"]["timeout"] == 45
