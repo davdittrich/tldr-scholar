@@ -128,7 +128,8 @@ def summarize_file(path: str, **kwargs) -> SummaryResult:
 
 def summarize_url(url: str, **kwargs) -> SummaryResult:
     """Summarize a web page or PDF URL."""
-    text, input_type = ingest(url)
+    backend_config = kwargs.get("backend_config", {})
+    text, input_type = ingest(url, backend_config=backend_config)
     result = summarize(text=text, **kwargs)
     result.metadata.source = _strip_url_credentials(url)
     result.metadata.input_type = input_type

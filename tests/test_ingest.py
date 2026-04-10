@@ -12,6 +12,7 @@ from tldr_scholar.ingest import (
     PasswordProtectedError,
     EmptyTextError,
 )
+from tldr_scholar.oa_fetch import OAResult
 
 
 class TestIngestFile:
@@ -130,3 +131,64 @@ class TestFetchOAPdf:
                 with patch("tldr_scholar.ingest._pdf_doc_to_text", return_value="Paper text"):
                     from tldr_scholar.ingest import _fetch_oa_pdf
                     assert _fetch_oa_pdf("https://example.com/paper.pdf") == "Paper text"
+
+
+class TestIngestUrlOAFallback:
+    def test_oa_pdf_found_after_js_gate(self):
+        js_html = '<head><meta name="citation_doi" content="10.1525/collabra.147309"/></head>' \
+                  '<body>Enable JavaScript and cookies to continue</body>'
+        with patch("tldr_scholar.ingest._fetch_html", return_value=js_html):
+            with patch("tldr_scholar.ingest.trafilatura") as mock_traf:
+                mock_traf.extract.return_value = "Enable JavaScript and cookies to continue"
+                with patch("tldr_scholar.ingest.find_oa", return_value=OAResult(pdf_url="https://cdn.example.com/p.pdf")):
+                    with patch("tldr_scholar.ingest._fetch_oa_pdf", return_value="Full paper text"):
+                        text, input_type = ingest("https://online.ucpress.edu/collabra/article/12/1/147309/")
+        assert input_type == "oa_pdf"
+        assert text == "Full paper text"
+
+    def test_abstract_fallback(self):
+        js_html = '<meta name="citation_doi" content="10.1234/test"/>Enable JavaScript'
+        with patch("tldr_scholar.ingest._fetch_html", return_value=js_html):
+            with patch("tldr_scholar.ingest.trafilatura") as mock_traf:
+                mock_traf.extract.return_value = "Enable JavaScript and cookies to continue"
+                with patch("tldr_scholar.ingest.find_oa", return_value=OAResult(abstract="Emoji study abstract.")):
+                    text, input_type = ingest("https://example.com/article")
+        assert input_type == "abstract"
+        assert "Emoji" in text
+
+    def test_full_text_fallback(self):
+        js_html = '<meta name="citation_doi" content="10.1234/test"/>Enable JavaScript'
+        with patch("tldr_scholar.ingest._fetch_html", return_value=js_html):
+            with patch("tldr_scholar.ingest.trafilatura") as mock_traf:
+                mock_traf.extract.return_value = "Enable JavaScript and cookies to continue"
+                with patch("tldr_scholar.ingest.find_oa", return_value=OAResult(full_text="Full paper body.")):
+                    text, input_type = ingest("https://example.com/article")
+        assert input_type == "oa_full_text"
+        assert text == "Full paper body."
+
+    def test_normal_page_skips_oa(self):
+        with patch("tldr_scholar.ingest._fetch_html", return_value="<html><body>Real content.</body></html>"):
+            with patch("tldr_scholar.ingest.trafilatura") as mock_traf:
+                mock_traf.extract.return_value = "Real content."
+                with patch("tldr_scholar.ingest.find_oa") as mock_oa:
+                    ingest("https://example.com/article")
+        mock_oa.assert_not_called()
+
+    def test_raises_when_no_doi_and_js_gated(self):
+        with patch("tldr_scholar.ingest._fetch_html", return_value="<html>Enable JavaScript and cookies to continue</html>"):
+            with patch("tldr_scholar.ingest.trafilatura") as mock_traf:
+                mock_traf.extract.return_value = "Enable JavaScript and cookies to continue"
+                with pytest.raises(EmptyTextError, match="JavaScript"):
+                    ingest("https://example.com/no-doi")
+
+    def test_email_from_backend_config_forwarded_to_find_oa(self):
+        """oa email in backend_config must be passed to find_oa."""
+        js_html = '<meta name="citation_doi" content="10.1234/test"/>Enable JavaScript'
+        with patch("tldr_scholar.ingest._fetch_html", return_value=js_html):
+            with patch("tldr_scholar.ingest.trafilatura") as mock_traf:
+                mock_traf.extract.return_value = "Enable JavaScript and cookies to continue"
+                with patch("tldr_scholar.ingest.find_oa", return_value=None) as mock_oa:
+                    with pytest.raises(EmptyTextError):
+                        ingest("https://example.com/article",
+                               backend_config={"oa": {"email": "user@example.com"}})
+        mock_oa.assert_called_once_with("10.1234/test", email="user@example.com")

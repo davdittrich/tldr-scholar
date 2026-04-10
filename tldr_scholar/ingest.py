@@ -11,6 +11,9 @@ import trafilatura
 from curl_cffi import requests as curl_requests
 from loguru import logger
 
+from tldr_scholar.doi import extract_doi
+from tldr_scholar.oa_fetch import find_oa
+
 _MAX_INPUT_BYTES = 5_000_000  # 5 MB cap
 
 _BROWSER_HEADERS = {
@@ -43,14 +46,14 @@ class EmptyTextError(Exception):
     """Raised when no text could be extracted."""
 
 
-def ingest(source: str) -> tuple[str, str]:
+def ingest(source: str, backend_config: dict | None = None) -> tuple[str, str]:
     """Dispatch input by type. Returns (text, input_type).
 
     Raises UnsupportedInputError, PasswordProtectedError, EmptyTextError.
     """
     parsed = urlparse(source)
     if parsed.scheme in ("http", "https"):
-        return _ingest_url(source)
+        return _ingest_url(source, backend_config=backend_config)
     if parsed.scheme and parsed.scheme not in ("", "file"):
         raise UnsupportedInputError(f"Unsupported URL scheme: {parsed.scheme}")
 
@@ -141,7 +144,7 @@ def _fetch_oa_pdf(url: str) -> str:
     return text
 
 
-def _ingest_url(url: str) -> tuple[str, str]:
+def _ingest_url(url: str, backend_config: dict | None = None) -> tuple[str, str]:
     """Fetch URL, detect type, extract text. Returns (text, input_type)."""
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
@@ -196,18 +199,35 @@ def _ingest_url(url: str) -> tuple[str, str]:
         except Exception as e:
             raise EmptyTextError(f"Failed to fetch {url}: {e}")
 
-    
         text = trafilatura.extract(html, output_format="txt",
                                    include_comments=False, include_tables=True)
-        if not text or not text.strip():
-            raise EmptyTextError(f"No text could be extracted from {url}")
-        text = text.strip()
-        lower = text.lower()
-        if any(pat in lower for pat in _JS_GATE_PATTERNS):
+        text = (text or "").strip()
+
+        # Success: real content, not a JS gate
+        if text and not any(pat in text.lower() for pat in _JS_GATE_PATTERNS):
+            return text, "html"
+
+        # OA fallback: extract DOI → query OA APIs
+        doi = extract_doi(url, html=html)
+        if doi:
+            oa_cfg = (backend_config or {}).get("oa", {})
+            result = find_oa(doi, email=oa_cfg.get("email", ""))
+            if result:
+                if result.pdf_url:
+                    try:
+                        return _fetch_oa_pdf(result.pdf_url), "oa_pdf"
+                    except EmptyTextError:
+                        pass
+                if result.full_text:
+                    return result.full_text, "oa_full_text"
+                if result.abstract:
+                    return result.abstract, "abstract"
+
+        if any(pat in text.lower() for pat in _JS_GATE_PATTERNS):
             raise EmptyTextError(
-                f"Page requires JavaScript to render — try the PDF URL directly: {url}"
+                f"Page requires JavaScript/authentication and no open-access version found: {url}"
             )
-        return text, "html"
+        raise EmptyTextError(f"No text could be extracted from {url}")
 
 
 def _ingest_markdown(path: Path) -> str:
