@@ -20,7 +20,7 @@ class SummaryRequest(BaseModel):
 class SummaryMetadata(BaseModel):
     """Metadata about the summarization result."""
     source: str = ""
-    input_type: str = ""       # "pdf", "html", "markdown", "text"
+    input_type: str = ""       # "pdf", "html", "oa_pdf", "oa_full_text", "abstract", "markdown", "text"
     backend_used: str = ""
     max_chars: int = 500
     focus: str = ""

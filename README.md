@@ -189,6 +189,23 @@ Sentence structure (medium / 5 sentences):
 Simpler prompt for non-academic text — blog posts, news articles, documentation.
 Same sentence count scaling, no IMRAD structure or verification guardrail.
 
+## URL Fetching Strategy
+
+When given a URL, `tldr-scholar` tries strategies in order until one succeeds:
+
+1. **Chrome TLS fetch** — Uses `curl-cffi` to impersonate Chrome's TLS fingerprint, bypassing most bot-detection systems. Passes the HTML to `trafilatura` for content extraction.
+
+2. **DOI extraction + Open Access lookup** — If the page returns a JS-gate or empty content, the DOI is extracted from the URL or `<meta name="citation_doi">` tag, then queried against:
+   - [Unpaywall](https://unpaywall.org) — largest OA database, no API key needed
+   - [OpenAlex](https://openalex.org) — open academic graph, abstracts + PDF URLs
+   - [Semantic Scholar](https://semanticscholar.org) — abstracts + OA PDF URLs
+
+3. **OA PDF download** — If a PDF URL is found, it is downloaded and parsed directly.
+
+If none succeed, an error is raised with a clear message.
+
+Note: `input_type` in the JSON output will be `oa_pdf` (full paper from OA PDF), `oa_full_text` (body text from OA source), or `abstract` (only abstract available) instead of `html` when the OA fallback was used.
+
 ## Backends
 
 ### Fallback chain (`--backend auto`)
@@ -278,6 +295,9 @@ preferred_models = [
 model = "gemma3:9b"
 host = "http://localhost:11434"
 timeout = 30
+
+[oa]
+email = ""   # your email for Unpaywall/OpenAlex polite pool (higher rate limits)
 ```
 
 ## Exit codes
