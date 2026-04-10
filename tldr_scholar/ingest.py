@@ -123,6 +123,10 @@ def _fetch_oa_pdf(url: str) -> str:
     except Exception as e:
         raise EmptyTextError(f"Failed to download OA PDF from {url}: {e}")
 
+    if len(pdf_bytes) > _MAX_INPUT_BYTES:
+        logger.warning(f"OA PDF from {url} exceeds {_MAX_INPUT_BYTES} bytes, truncating")
+        pdf_bytes = pdf_bytes[:_MAX_INPUT_BYTES]
+
     if not pdf_bytes.lstrip()[:5].startswith(b'%PDF-'):
         raise EmptyTextError(f"OA URL returned non-PDF content: {url}")
 
