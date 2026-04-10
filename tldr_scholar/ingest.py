@@ -5,13 +5,11 @@ import re
 from pathlib import Path
 from urllib.parse import urlparse
 
+import fitz
 import httpx
 import trafilatura
 from curl_cffi import requests as curl_requests
 from loguru import logger
-
-# fitz and pymupdf4llm are heavy C-extension imports (~200ms).
-# Imported lazily inside _ingest_pdf and _ingest_url's PDF branch.
 
 _MAX_INPUT_BYTES = 5_000_000  # 5 MB cap
 
@@ -91,8 +89,6 @@ def _pdf_doc_to_text(doc, max_pages: int = 20) -> str:
 
 def _ingest_pdf(path: Path) -> str:
     """Extract text from PDF (first 20 pages). Detects password-protected PDFs."""
-    import fitz
-
     pdf_bytes = path.read_bytes()
     if len(pdf_bytes) > _MAX_INPUT_BYTES:
         logger.warning(f"PDF {path} exceeds {_MAX_INPUT_BYTES} bytes, truncating")
@@ -116,6 +112,29 @@ def _fetch_html(url: str) -> str:
     with curl_requests.Session(impersonate="chrome124") as session:
         resp = session.get(url, headers=_BROWSER_HEADERS, timeout=15, allow_redirects=True)
         return resp.text
+
+
+def _fetch_oa_pdf(url: str) -> str:
+    """Download and parse a PDF from an OA URL. Raises EmptyTextError on failure."""
+    try:
+        with curl_requests.Session(impersonate="chrome124") as session:
+            resp = session.get(url, headers=_BROWSER_HEADERS, timeout=30, allow_redirects=True)
+            pdf_bytes = resp.content
+    except Exception as e:
+        raise EmptyTextError(f"Failed to download OA PDF from {url}: {e}")
+
+    if not pdf_bytes.lstrip()[:5].startswith(b'%PDF-'):
+        raise EmptyTextError(f"OA URL returned non-PDF content: {url}")
+
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    except Exception:
+        raise EmptyTextError(f"Failed to parse OA PDF from {url}")
+
+    text = _pdf_doc_to_text(doc)
+    if not text:
+        raise EmptyTextError(f"No text extracted from OA PDF: {url}")
+    return text
 
 
 def _ingest_url(url: str) -> tuple[str, str]:
@@ -157,7 +176,6 @@ def _ingest_url(url: str) -> tuple[str, str]:
                 f"URL returned non-PDF content (likely an auth wall or redirect): {url}"
             )
 
-        import fitz
         try:
             doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         except Exception:

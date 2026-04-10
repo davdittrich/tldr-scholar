@@ -96,3 +96,37 @@ class TestFileSizeLimit:
         f.write_text("x" * 6_000_000)
         text, _ = ingest(str(f))
         assert len(text) <= 5_000_000
+
+
+class TestFetchOAPdf:
+    def test_raises_on_html_response(self):
+        with patch("tldr_scholar.ingest.curl_requests") as mock_curl:
+            mock_session = MagicMock()
+            mock_curl.Session.return_value.__enter__ = MagicMock(return_value=mock_session)
+            mock_curl.Session.return_value.__exit__ = MagicMock(return_value=False)
+            mock_session.get.return_value.content = b"<html>Not a PDF</html>"
+            from tldr_scholar.ingest import _fetch_oa_pdf
+            with pytest.raises(EmptyTextError, match="non-PDF"):
+                _fetch_oa_pdf("https://example.com/paper.pdf")
+
+    def test_raises_on_network_error(self):
+        with patch("tldr_scholar.ingest.curl_requests") as mock_curl:
+            mock_session = MagicMock()
+            mock_curl.Session.return_value.__enter__ = MagicMock(return_value=mock_session)
+            mock_curl.Session.return_value.__exit__ = MagicMock(return_value=False)
+            mock_session.get.side_effect = Exception("net err")
+            from tldr_scholar.ingest import _fetch_oa_pdf
+            with pytest.raises(EmptyTextError, match="Failed to download"):
+                _fetch_oa_pdf("https://example.com/paper.pdf")
+
+    def test_returns_text_from_valid_pdf(self):
+        with patch("tldr_scholar.ingest.curl_requests") as mock_curl:
+            mock_session = MagicMock()
+            mock_curl.Session.return_value.__enter__ = MagicMock(return_value=mock_session)
+            mock_curl.Session.return_value.__exit__ = MagicMock(return_value=False)
+            mock_session.get.return_value.content = b"%PDF-1.4 fake"
+            with patch("tldr_scholar.ingest.fitz") as mock_fitz:
+                mock_fitz.open.return_value = MagicMock()
+                with patch("tldr_scholar.ingest._pdf_doc_to_text", return_value="Paper text"):
+                    from tldr_scholar.ingest import _fetch_oa_pdf
+                    assert _fetch_oa_pdf("https://example.com/paper.pdf") == "Paper text"
