@@ -33,6 +33,7 @@ def build_hashtag_instruction(n: int) -> str:
         f"After the summary, on a new line, generate exactly {n} hashtags. "
         "Each hashtag should be 1-2 words, lowercase, commonly used on academic "
         "social media, and descriptive of the text's key topics. "
+        "Use underscores for multi-word hashtags (e.g., #machine_learning, #climate_change). "
         "Format: #hashtag1 #hashtag2 ..."
     )
 
@@ -62,7 +63,7 @@ def parse_hashtags_from_response(response: str) -> tuple[str, list[str]]:
 
 
 def generate_hashtags_tfidf(text: str, n: int) -> list[str]:
-    """Generate hashtags from text using TF-IDF heuristic.
+    """Generate hashtags from text using TF-IDF heuristic with bigram support.
 
     No NLTK dependency — uses a built-in stopword list and simple tokenization.
     Returns hashtags as lowercase #-prefixed strings, max 30 chars each.
@@ -70,30 +71,62 @@ def generate_hashtags_tfidf(text: str, n: int) -> list[str]:
     if n <= 0 or not text:
         return []
 
-    # Tokenize: split on non-alphanumeric, lowercase, filter stopwords and short words
-    words = re.findall(r"[a-zA-Z]{3,}", text.lower())
-    words = [w for w in words if w not in _STOPWORDS and len(w) >= 3]
+    # unigrams
+    unigrams = re.findall(r"[a-zA-Z]{3,}", text.lower())
+    unigrams = [w for w in unigrams if w not in _STOPWORDS]
 
-    if not words:
+    # bigrams
+    bigrams = []
+    # Original words to preserve case for bigram detection if needed,
+    # but for simplicity we use lowercase words
+    all_words = re.findall(r"[a-zA-Z]{2,}", text.lower())
+    for i in range(len(all_words) - 1):
+        w1, w2 = all_words[i], all_words[i + 1]
+        if w1 not in _STOPWORDS and w2 not in _STOPWORDS:
+            bigrams.append(f"{w1}_{w2}")
+
+    all_terms = unigrams + bigrams
+    if not all_terms:
         return []
 
     # TF (term frequency)
-    tf = Counter(words)
-    total = len(words)
+    tf = Counter(all_terms)
+    total = len(all_terms)
 
-    # Simple TF-IDF: tf * log(1/df) approximated as tf for single-document use
-    # Boost multi-word terms by checking for capitalized words in original text
-    # (heuristic for proper nouns / key terms)
+    # Heuristic: boost capitalized terms and multi-word terms
     capitalized = set(re.findall(r"\b[A-Z][a-z]{2,}", text))
     cap_lower = {w.lower() for w in capitalized}
 
     scored: list[tuple[str, float]] = []
-    for word, count in tf.items():
+    for term, count in tf.items():
         score = count / total
-        if word in cap_lower:
-            score *= 2.0  # boost capitalized terms (likely key concepts)
-        scored.append((word, score))
+        
+        # Boost unigrams that were capitalized
+        if term in cap_lower:
+            score *= 2.0
+            
+        # Boost bigrams (inherently more descriptive)
+        if "_" in term:
+            score *= 1.5
+            
+        scored.append((term, score))
 
     scored.sort(key=lambda x: x[1], reverse=True)
-    top_terms = [w for w, _ in scored[:n]]
+    
+    # Selection: ensure we don't pick a unigram that is already part of a top bigram
+    top_terms = []
+    seen_parts = set()
+    for term, _ in scored:
+        if len(top_terms) >= n:
+            break
+            
+        if "_" in term:
+            parts = term.split("_")
+            top_terms.append(term)
+            seen_parts.update(parts)
+        else:
+            if term not in seen_parts:
+                top_terms.append(term)
+                seen_parts.add(term)
+
     return [f"#{t}"[:30] for t in top_terms]
