@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from tldr_scholar.config import GeminiConfig
+
 from loguru import logger
 
 from tldr_scholar.backends.base import BackendBase
@@ -19,7 +21,7 @@ class GeminiBackend(BackendBase):
     def __init__(self, config: dict[str, Any] | None = None):
         cfg = config or {}
         self._model = cfg.get("model", "")
-        self._timeout = cfg.get("timeout", 180)
+        self._timeout = cfg.get("timeout", GeminiConfig().timeout)
         self._last_usage = None
 
     def summarize(self, text: str, max_chars: int, focus: str,

@@ -294,7 +294,7 @@ preferred_models = [
 [ollama]
 model = "gemma3:9b"
 host = "http://localhost:11434"
-timeout = 30
+timeout = 90
 
 [oa]
 email = ""   # your email for Unpaywall/OpenAlex polite pool (higher rate limits)

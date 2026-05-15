@@ -32,7 +32,7 @@ class LemonadeConfig(BaseModel):
 class OllamaConfig(BaseModel):
     model: str = "gemma3:9b"
     host: str = "http://localhost:11434"
-    timeout: int = 30
+    timeout: int = 90
 
 
 class OAConfig(BaseModel):
