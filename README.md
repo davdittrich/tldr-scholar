@@ -15,6 +15,7 @@ structured, jargon-free summaries with optional hashtags for social media.
 - **Hashtag generation**: LLM-derived or TF-IDF fallback with **bigram support** (e.g., #machine_learning)
 - **Three output formats**: plain text, JSON, Markdown
 - **Zero-config startup**: works immediately with the extractive backend
+- **Usage Metadata**: Track token usage and cost for Gemini summaries
 - **Library API**: `from tldr_scholar import summarize`
 
 ## How it works
@@ -128,7 +129,11 @@ Summary text here.
     "focus": "main findings and novel insights",
     "char_count": 487,
     "audience": "expert",
-    "tone": "professional"
+    
+    "tone": "professional",
+    "tokens_used": 420,
+    "cost_usd": 0.00126,
+    "cost_currency": "USD"
   }
 }
 ```
@@ -153,9 +158,17 @@ from tldr_scholar import summarize, summarize_file, summarize_url, AudienceEnum,
 result = summarize(text="Long article text...", audience=AudienceEnum.STUDENT)
 print(result.text)
 
+# Get metadata (tokens and cost)
+if result.metadata.tokens_used:
+    print(f"Used {result.metadata.tokens_used} tokens.")
+
 # Summarize a file with a casual tone
 result = summarize_file("paper.pdf", tone=ToneEnum.CASUAL, mode="general")
 print(result.text)
+
+# Get metadata (tokens and cost)
+if result.metadata.tokens_used:
+    print(f"Used {result.metadata.tokens_used} tokens.")
 ```
 
 ### `SummaryResult` object
@@ -268,6 +281,11 @@ pip install -e ".[dev]"
 pytest
 pytest --cov=tldr_scholar --cov-fail-under=100
 ```
+
+## Documentation
+
+- [Architecture](ARCHITECTURE.md)
+- [Contributing](CONTRIBUTING.md)
 
 ## Architecture
 
