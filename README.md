@@ -213,6 +213,24 @@ Optional TOML config file for persistent backend settings.
 tldr-scholar paper.pdf --config tldr-scholar.toml
 ```
 
+## Personal Style Synthesis
+
+tldr-scholar can synthesize and replicate your individual writing style from past posts.
+
+### 1. Synthesize your style
+
+```bash
+bin/synthesize-style path/to/your/posts.txt --name my-style
+```
+
+This generates a YAML profile in `~/.config/tldr-scholar/personas/my-style.yaml`.
+
+### 2. Use your style
+
+```bash
+tldr-scholar paper.pdf --audience my-style
+```
+
 ### Example config
 
 ```toml
