@@ -13,6 +13,7 @@ from tldr_scholar.backends.ollama import OllamaBackend
 
 if TYPE_CHECKING:
     from gemini_acp.client import GeminiUsage  # type: ignore[reportAttributeAccessIssue]
+    from tldr_scholar.models import AudienceEnum, ToneEnum
 
 _BACKEND_MAP: dict[str, type[BackendBase]] = {
     "gemini": GeminiBackend,
@@ -47,6 +48,8 @@ def run_with_fallback(
     focus: str,
     hashtag_instruction: str,
     backend: str,
+    audience: AudienceEnum,
+    tone: ToneEnum,
     config: dict[str, Any] | None = None,
     mode: str = "scientific",
     sentence_count: int = 5,
@@ -62,16 +65,22 @@ def run_with_fallback(
             if i > 0:
                 logger.warning(f"Summarizer: falling back to {name}")
             b = get_backend(name, config)
-            result = b.summarize(text, max_chars, focus, hashtag_instruction,
-                                 mode=mode, sentence_count=sentence_count)
+            result = b.summarize(
+                text, max_chars, focus, hashtag_instruction,
+                audience=audience, tone=tone,
+                mode=mode, sentence_count=sentence_count
+            )
             if result:
                 usage = getattr(b, "_last_usage", None)
                 return result, name, usage
         return None, "", None
     else:
         b = get_backend(backend, config)
-        result = b.summarize(text, max_chars, focus, hashtag_instruction,
-                             mode=mode, sentence_count=sentence_count)
+        result = b.summarize(
+            text, max_chars, focus, hashtag_instruction,
+            audience=audience, tone=tone,
+            mode=mode, sentence_count=sentence_count
+        )
         if result:
             usage = getattr(b, "_last_usage", None)
             return result, backend, usage

@@ -5,13 +5,16 @@ import re
 import shutil
 import subprocess
 import time as _time
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import httpx
 from loguru import logger
 
 from tldr_scholar.backends.base import BackendBase
-from tldr_scholar.prompts import build_system_prompt
+from tldr_scholar.prompts import PromptBuilder
+
+if TYPE_CHECKING:
+    from tldr_scholar.models import AudienceEnum, ToneEnum
 
 _MODEL_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 _cached_model: Optional[str] = None
@@ -36,9 +39,17 @@ class LemonadeBackend(BackendBase):
             "Llama-3.2-1B-Instruct-GGUF",
         ])
 
-    def summarize(self, text: str, max_chars: int, focus: str,
-                  hashtag_instruction: str, mode: str = "scientific",
-                  sentence_count: int = 5) -> Optional[str]:
+    def summarize(
+        self,
+        text: str,
+        max_chars: int,
+        focus: str,
+        hashtag_instruction: str,
+        audience: AudienceEnum,
+        tone: ToneEnum,
+        mode: str = "scientific",
+        sentence_count: int = 5,
+    ) -> Optional[str]:
         model = self._model
         if not model:
             model = _ensure_model(
@@ -49,9 +60,14 @@ class LemonadeBackend(BackendBase):
                 logger.debug("No Lemonade model available")
                 return None
 
-        system_msg = build_system_prompt(
-            mode=mode, max_chars=max_chars, focus=focus,
-            hashtag_instruction=hashtag_instruction, sentence_count=sentence_count,
+        system_msg = PromptBuilder().build_system_prompt(
+            mode=mode,
+            max_chars=max_chars,
+            focus=focus,
+            hashtag_instruction=hashtag_instruction,
+            sentence_count=sentence_count,
+            audience=audience,
+            tone=tone,
         )
         try:
             response = httpx.post(

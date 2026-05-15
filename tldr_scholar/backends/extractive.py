@@ -1,86 +1,74 @@
-"""Extractive summarization backend — sumy KL + LSA two-pass algorithm.
-
-Copied from scholarposter's summarize_extractive with attribution.
-Focus keyword biasing: re-ranks sumy output by boosting sentences containing focus terms.
-"""
+"""Extractive summarization backend using LexRank."""
 from __future__ import annotations
 
-import re
-from math import sqrt
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from loguru import logger
 from sumy.nlp.tokenizers import Tokenizer
 from sumy.parsers.plaintext import PlaintextParser
-from sumy.summarizers.kl import KLSummarizer
-from sumy.summarizers.lsa import LsaSummarizer
+from sumy.summarizers.lex_rank import LexRankSummarizer
 
 from tldr_scholar.backends.base import BackendBase
 
-_LANGUAGE = "english"
-_MIN_SENTENCES = 3
-_MIN_SENTENCE_CHARS = 40
-
-
-def _collect_sentences(sentences, min_chars: int = _MIN_SENTENCE_CHARS) -> str:
-    parts = [str(s) for s in sentences if len(str(s)) > min_chars]
-    text = " ".join(parts)
-    return re.sub(r"\([^()]*\)", "", text)
+if TYPE_CHECKING:
+    from tldr_scholar.models import AudienceEnum, ToneEnum
 
 
 class ExtractiveBackend(BackendBase):
-    def __init__(self, config: dict = None):
-        cfg = config or {}
-        self._max_sentences = cfg.get("max_sentences", 5)
+    """Summarizer using traditional extractive LexRank algorithm."""
 
-    def summarize(self, text: str, max_chars: int, focus: str,
-                  hashtag_instruction: str, mode: str = "scientific",
-                  sentence_count: int = 5) -> Optional[str]:
-        """Extractive summarization. hashtag_instruction, mode, sentence_count ignored."""
-        parser = PlaintextParser.from_string(text, Tokenizer(_LANGUAGE))
-        sc = len(parser.document.sentences)
-        if sc < _MIN_SENTENCES:
-            return ""
+    def __init__(self, config: dict | None = None):
+        self._config = config or {}
 
-        kl_summ = KLSummarizer()
-        lsa_summ = LsaSummarizer()
-        full_text = ""
+    def summarize(
+        self,
+        text: str,
+        max_chars: int,
+        focus: str,
+        hashtag_instruction: str,
+        audience: AudienceEnum,
+        tone: ToneEnum,
+        mode: str = "scientific",
+        sentence_count: int = 5,
+    ) -> Optional[str]:
+        """Summarize via LexRank (extractive).
 
-        # Stage 1: reduce very long documents
-        if sc > 150:
-            reduced_count = max(150, int(150 + sqrt(sc - 150)))
-            full_text = _collect_sentences(kl_summ(parser.document, reduced_count))
-            parser = PlaintextParser.from_string(full_text, Tokenizer(_LANGUAGE))
-            sc = len(parser.document.sentences)
-            full_text = ""
+        Ignores hashtag_instruction, audience, and tone (limitations of extractive).
+        Uses focus keywords for simple biasing if provided.
+        """
+        try:
+            parser = PlaintextParser.from_string(text, Tokenizer("english"))
+            summarizer = LexRankSummarizer()
 
-        pc = len(parser.document.paragraphs)
-        nos = min(max(3, int(0.01 * sc), int(0.05 * pc)), self._max_sentences)
+            # Bias towards focus if present
+            if focus:
+                # LexRank implementation in sumy doesn't directly support focus
+                # but we can simulate it by increasing sentence count then filtering
+                count = max(sentence_count * 2, 10)
+            else:
+                count = sentence_count
 
-        # Stage 2: LSA extraction
-        sentences = list(lsa_summ(parser.document, nos))
+            sentences = summarizer(parser.document, count)
 
-        # Focus keyword biasing: re-rank sentences containing focus terms first
-        if focus:
-            focus_words = set(focus.lower().split())
-            sentences.sort(
-                key=lambda s: (
-                    0 if any(w in str(s).lower() for w in focus_words) else 1,
-                ),
-            )
+            # Convert to strings
+            results = [str(s) for m in sentences for s in (m,) if str(s).strip()]
 
-        full_text = _collect_sentences(sentences)
+            if focus:
+                # Naive keyword search to prioritize relevant sentences
+                keywords = focus.lower().split()
+                results.sort(key=lambda s: sum(1 for k in keywords if k in s.lower()), reverse=True)
+                results = results[:sentence_count]
 
-        # Reduce if too long
-        while len(full_text) > max_chars:
-            nos -= 1
-            if nos == 0:
-                break
-            full_text = _collect_sentences(
-                lsa_summ(parser.document, nos), min_chars=0
-            )
+            # Join and truncate to max_chars
+            full_text = " ".join(results)
+            while len(full_text) > max_chars and len(results) > 1:
+                results.pop()
+                full_text = " ".join(results)
 
-        if len(full_text) > max_chars:
-            full_text = full_text[:max_chars - 1] + "\u2026"
+            if len(full_text) > max_chars:
+                full_text = full_text[: max_chars - 1] + "\u2026"
 
-        return full_text.strip()
+            return full_text
+        except Exception as e:
+            logger.error(f"Extractive summarization failed: {e}")
+            return None
