@@ -11,6 +11,11 @@ from tldr_scholar.backends.gemini import GeminiBackend
 from tldr_scholar.backends.lemonade import LemonadeBackend
 from tldr_scholar.backends.ollama import OllamaBackend
 
+try:
+    from gemini_acp.client import GeminiUsage
+except ImportError:
+    GeminiUsage = None  # type: ignore[assignment,misc]
+
 _BACKEND_MAP: dict[str, type[BackendBase]] = {
     "gemini": GeminiBackend,
     "lemonade": LemonadeBackend,
@@ -47,7 +52,7 @@ def run_with_fallback(
     config: dict[str, Any] | None = None,
     mode: str = "scientific",
     sentence_count: int = 5,
-) -> "tuple[Optional[str], str, Any]":
+) -> tuple[Optional[str], str, GeminiUsage | None]:
     """Run summarization with optional fallback chain.
 
     Returns (response_text, backend_used, usage) or (None, "", None) on
