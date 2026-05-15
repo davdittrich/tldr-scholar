@@ -47,10 +47,12 @@ def run_with_fallback(
     config: dict[str, Any] | None = None,
     mode: str = "scientific",
     sentence_count: int = 5,
-) -> tuple[Optional[str], str]:
+) -> "tuple[Optional[str], str, Any]":
     """Run summarization with optional fallback chain.
 
-    Returns (response_text, backend_used) or (None, "") on complete failure.
+    Returns (response_text, backend_used, usage) or (None, "", None) on
+    complete failure. usage is a GeminiUsage instance when the gemini backend
+    is used and ACP is available, otherwise None.
     """
     if backend == "auto":
         for i, name in enumerate(_AUTO_ORDER):
@@ -60,12 +62,14 @@ def run_with_fallback(
             result = b.summarize(text, max_chars, focus, hashtag_instruction,
                                  mode=mode, sentence_count=sentence_count)
             if result:
-                return result, name
-        return None, ""
+                usage = getattr(b, "_last_usage", None)
+                return result, name, usage
+        return None, "", None
     else:
         b = get_backend(backend, config)
         result = b.summarize(text, max_chars, focus, hashtag_instruction,
                              mode=mode, sentence_count=sentence_count)
         if result:
-            return result, backend
-        return None, ""
+            usage = getattr(b, "_last_usage", None)
+            return result, backend, usage
+        return None, "", None

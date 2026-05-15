@@ -25,6 +25,9 @@ class SummaryMetadata(BaseModel):
     max_chars: int = 500
     focus: str = ""
     char_count: int = 0
+    tokens_used: int | None = None
+    cost_usd: float | None = None
+    cost_currency: str | None = None
 
 
 class SummaryResult(BaseModel):

@@ -71,7 +71,7 @@ def summarize(
         )
 
     hashtag_instruction = build_hashtag_instruction(req.hashtags)
-    response, backend_used = run_with_fallback(
+    response, backend_used, usage = run_with_fallback(
         text=req.text,
         max_chars=req.max_chars,
         focus=req.focus,
@@ -105,15 +105,21 @@ def summarize(
         summary_text = response
         hashtag_list = []
 
+    metadata = SummaryMetadata(
+        backend_used=backend_used,
+        max_chars=req.max_chars,
+        focus=req.focus,
+        char_count=len(summary_text.strip()),
+    )
+    if usage is not None:
+        metadata.tokens_used = usage.tokens_used
+        metadata.cost_usd = usage.cost_usd
+        metadata.cost_currency = usage.cost_currency
+
     return SummaryResult(
         text=summary_text.strip(),
         hashtags=hashtag_list,
-        metadata=SummaryMetadata(
-            backend_used=backend_used,
-            max_chars=req.max_chars,
-            focus=req.focus,
-            char_count=len(summary_text.strip()),
-        ),
+        metadata=metadata,
     )
 
 

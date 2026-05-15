@@ -236,3 +236,77 @@ class TestGeminiTimeout:
             runner.invoke(app, [str(f), "--config", str(config_file)])
             call_kwargs = mock_fn.call_args[1]
             assert call_kwargs["backend_config"]["gemini"]["timeout"] == 45
+
+
+class TestCliUsageDisplay:
+    def test_text_shows_cost_line(self, tmp_path):
+        mock_result = SummaryResult(
+            text="summary text",
+            hashtags=[],
+            metadata=SummaryMetadata(
+                backend_used="gemini", max_chars=200, focus="test",
+                tokens_used=1234, cost_usd=0.002345, cost_currency="USD",
+            ),
+        )
+        with patch("tldr_scholar.cli.summarize_file", return_value=mock_result):
+            result = runner.invoke(app, ["dummy.txt"])
+
+        assert "Tokens: 1234" in result.output
+        assert "Cost: USD 0.002345" in result.output
+
+    def test_text_tokens_only_no_cost(self, tmp_path):
+        mock_result = SummaryResult(
+            text="summary",
+            hashtags=[],
+            metadata=SummaryMetadata(
+                backend_used="gemini", max_chars=200, focus="test",
+                tokens_used=500, cost_usd=None, cost_currency=None,
+            ),
+        )
+        with patch("tldr_scholar.cli.summarize_file", return_value=mock_result):
+            result = runner.invoke(app, ["dummy.txt"])
+
+        assert "Tokens: 500" in result.output
+        assert "Cost:" not in result.output
+
+    def test_text_no_usage_no_cost_line(self, tmp_path):
+        mock_result = SummaryResult(
+            text="summary",
+            hashtags=[],
+            metadata=SummaryMetadata(backend_used="extractive", max_chars=200, focus="test"),
+        )
+        with patch("tldr_scholar.cli.summarize_file", return_value=mock_result):
+            result = runner.invoke(app, ["dummy.txt"])
+
+        assert "Tokens:" not in result.output
+        assert "Cost:" not in result.output
+
+    def test_quiet_suppresses_cost_line(self):
+        mock_result = SummaryResult(
+            text="summary",
+            hashtags=[],
+            metadata=SummaryMetadata(
+                backend_used="gemini", max_chars=200, focus="test",
+                tokens_used=1000, cost_usd=0.003, cost_currency="USD",
+            ),
+        )
+        with patch("tldr_scholar.cli.summarize_file", return_value=mock_result):
+            result = runner.invoke(app, ["dummy.txt", "--quiet"])
+
+        assert "Tokens:" not in result.output
+
+    def test_markdown_usage_section(self, tmp_path):
+        mock_result = SummaryResult(
+            text="summary",
+            hashtags=[],
+            metadata=SummaryMetadata(
+                backend_used="gemini", max_chars=200, focus="test",
+                tokens_used=500, cost_usd=0.001, cost_currency="USD",
+            ),
+        )
+        with patch("tldr_scholar.cli.summarize_file", return_value=mock_result):
+            result = runner.invoke(app, ["dummy.txt", "--format", "markdown"])
+
+        assert "## Usage" in result.output
+        assert "- Tokens: 500" in result.output
+        assert "- Cost: USD 0.001000" in result.output

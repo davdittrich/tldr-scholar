@@ -144,7 +144,19 @@ def main(
         typer.echo(f"## Summary\n\n{result.text}")
         if result.hashtags:
             typer.echo(f"\n## Hashtags\n\n{' '.join(result.hashtags)}")
+        if result.metadata.tokens_used is not None and not quiet:
+            typer.echo("\n## Usage\n")
+            typer.echo(f"- Tokens: {result.metadata.tokens_used}")
+            if result.metadata.cost_usd is not None:
+                currency = result.metadata.cost_currency or "USD"
+                typer.echo(f"- Cost: {currency} {result.metadata.cost_usd:.6f}")
     else:  # text
         typer.echo(result.text)
         if result.hashtags:
             typer.echo(" ".join(result.hashtags))
+        if result.metadata.tokens_used is not None and not quiet:
+            parts = [f"Tokens: {result.metadata.tokens_used}"]
+            if result.metadata.cost_usd is not None:
+                currency = result.metadata.cost_currency or "USD"
+                parts.append(f"Cost: {currency} {result.metadata.cost_usd:.6f}")
+            typer.echo(" | ".join(parts))

@@ -8,19 +8,24 @@ from loguru import logger
 from tldr_scholar.backends.base import BackendBase
 from tldr_scholar.prompts import build_single_prompt
 
+try:
+    from gemini_acp import summarize_via_gemini, ACP_AVAILABLE
+except ImportError:
+    summarize_via_gemini = None  # type: ignore[assignment]
+    ACP_AVAILABLE = False
+
 
 class GeminiBackend(BackendBase):
     def __init__(self, config: dict[str, Any] | None = None):
         cfg = config or {}
         self._model = cfg.get("model", "")
         self._timeout = cfg.get("timeout", 180)
+        self._last_usage = None
 
     def summarize(self, text: str, max_chars: int, focus: str,
                   hashtag_instruction: str, mode: str = "scientific",
                   sentence_count: int = 5) -> Optional[str]:
-        try:
-            from gemini_acp import summarize_via_gemini, ACP_AVAILABLE
-        except ImportError:
+        if summarize_via_gemini is None:
             logger.debug("gemini-acp not installed")
             return None
 
@@ -32,8 +37,10 @@ class GeminiBackend(BackendBase):
             text=text, mode=mode, max_chars=max_chars, focus=focus,
             hashtag_instruction=hashtag_instruction, sentence_count=sentence_count,
         )
-        return summarize_via_gemini(
+        text_result, usage = summarize_via_gemini(
             text="",  # text already embedded in prompt via <document> delimiters
             prompt=prompt,
             model=self._model, timeout=self._timeout,
         )
+        self._last_usage = usage
+        return text_result
