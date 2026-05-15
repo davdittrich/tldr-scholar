@@ -21,20 +21,60 @@ _STOPWORDS = frozenset({
     "during", "up", "out", "then", "here", "there", "what", "who", "whom",
 })
 
+_ACRONYMS = {"ai", "nlp", "ml", "llm", "cpu", "gpu", "tpu", "api"}
 
-def build_hashtag_instruction(n: int) -> str:
+
+def format_pascal_case(text: str) -> str:
+    """Format text into #PascalCase.
+    
+    Examples:
+    - "machine learning" -> "#MachineLearning"
+    - "ai" -> "#AI"
+    - "web3" -> "#Web3"
+    """
+    if not text:
+        return ""
+    
+    # Strip non-alphanumeric (except underscores which we treat as word boundaries)
+    clean = re.sub(r"[^a-zA-Z0-9_]", " ", text)
+    parts = clean.replace("_", " ").split()
+    
+    formatted_parts = []
+    for part in parts:
+        lower = part.lower()
+        if lower in _ACRONYMS:
+            formatted_parts.append(lower.upper())
+        else:
+            # Capitalize first letter, keep rest as-is if it has existing caps
+            # or lowercase if it was all lower
+            if part.islower():
+                formatted_parts.append(part.capitalize())
+            else:
+                formatted_parts.append(part[0].upper() + part[1:])
+                
+    return "#" + "".join(formatted_parts)
+
+
+def build_hashtag_instruction(n: int, style: str = "lowercase") -> str:
     """Build the prompt instruction for LLM hashtag generation.
 
     Returns empty string when n == 0.
     """
     if n <= 0:
         return ""
+    
+    if style == "pascal":
+        format_ex = "#MachineLearning #ArtificialIntelligence"
+        case_instr = "PascalCase (e.g., #MachineLearning)"
+    else:
+        format_ex = "#machine_learning #climate_change"
+        case_instr = "lowercase (e.g., #machine_learning)"
+        
     return (
         f"After the summary, on a new line, generate exactly {n} hashtags. "
-        "Each hashtag should be 1-2 words, lowercase, commonly used on academic "
+        f"Each hashtag should be 1-2 words, {case_instr}, commonly used on academic "
         "social media, and descriptive of the text's key topics. "
-        "Use underscores for multi-word hashtags (e.g., #machine_learning, #climate_change). "
-        "Format: #hashtag1 #hashtag2 ..."
+        f"Format: {format_ex} ..."
     )
 
 
@@ -55,14 +95,15 @@ def parse_hashtags_from_response(response: str) -> tuple[str, list[str]]:
         tags = _HASHTAG_RE.findall(line)
         if tags and len(tags) >= 2:  # at least 2 hashtags on one line
             summary = "\n".join(lines[:i]).strip()
-            hashtags = [t.lower()[:30] for t in tags]  # lowercase, max 30 chars
+            # Preserve case if it looks like PascalCase
+            hashtags = [t[:30] for t in tags]
             return summary, hashtags
 
     # No hashtag line found
     return response.strip(), []
 
 
-def generate_hashtags_tfidf(text: str, n: int) -> list[str]:
+def generate_hashtags_tfidf(text: str, n: int, style: str = "lowercase") -> list[str]:
     """Generate hashtags from text using TF-IDF heuristic with bigram support.
 
     No NLTK dependency — uses a built-in stopword list and simple tokenization.
@@ -77,8 +118,6 @@ def generate_hashtags_tfidf(text: str, n: int) -> list[str]:
 
     # bigrams
     bigrams = []
-    # Original words to preserve case for bigram detection if needed,
-    # but for simplicity we use lowercase words
     all_words = re.findall(r"[a-zA-Z]{2,}", text.lower())
     for i in range(len(all_words) - 1):
         w1, w2 = all_words[i], all_words[i + 1]
@@ -129,4 +168,6 @@ def generate_hashtags_tfidf(text: str, n: int) -> list[str]:
                 top_terms.append(term)
                 seen_parts.add(term)
 
+    if style == "pascal":
+        return [format_pascal_case(t)[:30] for t in top_terms]
     return [f"#{t}"[:30] for t in top_terms]
