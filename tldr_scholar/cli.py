@@ -150,7 +150,8 @@ def main(
             typer.echo(f"- {tok_prefix}Tokens: {result.metadata.tokens_used}")
             if result.metadata.cost_usd is not None:
                 currency = result.metadata.cost_currency or "USD"
-                typer.echo(f"- Cost: {currency} {result.metadata.cost_usd:.6f}")
+                cost_prefix = "~" if result.metadata.cost_estimated else ""
+                typer.echo(f"- Cost: {cost_prefix}{currency} {result.metadata.cost_usd:.6f}")
     else:  # text
         typer.echo(result.text)
         if result.hashtags:
@@ -160,5 +161,6 @@ def main(
             parts = [f"{tok_prefix}Tokens: {result.metadata.tokens_used}"]
             if result.metadata.cost_usd is not None:
                 currency = result.metadata.cost_currency or "USD"
-                parts.append(f"Cost: {currency} {result.metadata.cost_usd:.6f}")
+                cost_prefix = "~" if result.metadata.cost_estimated else ""
+                parts.append(f"Cost: {cost_prefix}{currency} {result.metadata.cost_usd:.6f}")
             typer.echo(" | ".join(parts))

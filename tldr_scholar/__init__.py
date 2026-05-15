@@ -116,6 +116,7 @@ def summarize(
         metadata.cost_usd = usage.cost_usd
         metadata.cost_currency = usage.cost_currency
         metadata.tokens_estimated = usage.is_estimated
+        metadata.cost_estimated = usage.cost_is_estimated
 
     return SummaryResult(
         text=summary_text.strip(),

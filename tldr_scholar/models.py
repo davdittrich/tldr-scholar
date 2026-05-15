@@ -29,6 +29,7 @@ class SummaryMetadata(BaseModel):
     cost_usd: float | None = None
     cost_currency: str | None = None
     tokens_estimated: bool = False
+    cost_estimated: bool = False
 
 
 class SummaryResult(BaseModel):
