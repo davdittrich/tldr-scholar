@@ -1,6 +1,7 @@
 """Prompt templates for summarization backends."""
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -114,6 +115,37 @@ Be concise, precise, and factual. Do not add information not in the source.
 {hashtag_instruction}"""
 
 # ---------------------------------------------------------------------------
+# Persona Template (Generic)
+# ---------------------------------------------------------------------------
+
+PERSONA_SYSTEM_PROMPT = """\
+You are {role}.
+Summarize the following document with maximum information density and a {tone} tone.
+Target length: {sentence_count} sentences, approximately {max_chars} characters.
+Avoid all hype, emotional language, and corporate jargon.
+
+Output Format:
+{pattern_instruction}
+
+{hashtag_instruction}
+"""
+
+_PATTERNS = {
+    "stitched": (
+        "1. Start directly with the title and source: [Title]{source_line}\n"
+        "2. Use the 'Stitched Quotes' pattern: select the most critical 3-5 fragments "
+        "from the text and stitch them together using ellipses exactly like this: "
+        "\"… [fragment] … [fragment] …\".\n"
+        "3. Finish with a brief analytical synthesis sentence."
+    ),
+    "bullet_points": (
+        "1. Start with the [Title].\n"
+        "2. Provide the core findings as a list of 3-5 concise bullet points.\n"
+        "3. Focus on empirical evidence and statistical significance."
+    )
+}
+
+# ---------------------------------------------------------------------------
 # Single-prompt template (Gemini / Ollama — not chat-based)
 # ---------------------------------------------------------------------------
 
@@ -127,6 +159,10 @@ SINGLE_PROMPT_TEMPLATE = """\
 
 class PromptBuilder:
     """Class to build customized system and user prompts."""
+
+    def __init__(self):
+        from tldr_scholar.personas import PersonaManager
+        self._persona_manager = PersonaManager()
 
     def _get_audience_instruction(self, audience: AudienceEnum) -> str:
         """Get instructions for the specific audience persona."""
@@ -184,6 +220,9 @@ class PromptBuilder:
         sentence_count: int = 5,
         audience: AudienceEnum | None = None,
         tone: ToneEnum | None = None,
+        persona: str | None = None,
+        text: str = "",
+        metadata: dict | None = None,
     ) -> str:
         """Build the system prompt for the given mode and audience."""
         from tldr_scholar.models import AudienceEnum, ToneEnum
@@ -193,6 +232,31 @@ class PromptBuilder:
             audience = AudienceEnum.EXPERT
         if tone is None:
             tone = ToneEnum.PROFESSIONAL
+
+        # Persona override
+        if persona:
+            p_config = self._persona_manager.get_persona(persona)
+            if p_config:
+                # Word count guard: if input < 300 words, fall back to expert
+                word_count = len(re.findall(r"\w+", text))
+                if word_count >= 300:
+                    source = (metadata or {}).get("source", "")
+                    source_line = f" [{source}]" if source and source.startswith("http") else ""
+                    
+                    pattern_template = _PATTERNS.get(
+                        p_config.structure_pattern, 
+                        _PATTERNS["stitched"]
+                    )
+                    pattern_instr = pattern_template.format(source_line=source_line)
+                    
+                    return PERSONA_SYSTEM_PROMPT.format(
+                        role=p_config.role,
+                        tone=p_config.tone,
+                        max_chars=max_chars,
+                        sentence_count=sentence_count,
+                        pattern_instruction=pattern_instr,
+                        hashtag_instruction=hashtag_instruction,
+                    ).strip()
 
         if mode == "scientific":
             sentence_structure = self._get_scientific_structure(sentence_count, audience)
@@ -231,10 +295,13 @@ class PromptBuilder:
         sentence_count: int = 5,
         audience: AudienceEnum | None = None,
         tone: ToneEnum | None = None,
+        persona: str | None = None,
+        metadata: dict | None = None,
     ) -> str:
         """Build the full prompt for single-prompt APIs (Gemini, Ollama)."""
         system = self.build_system_prompt(
-            mode, max_chars, focus, hashtag_instruction, sentence_count, audience, tone
+            mode, max_chars, focus, hashtag_instruction, sentence_count, 
+            audience, tone, persona, text, metadata
         )
         return SINGLE_PROMPT_TEMPLATE.format(system_prompt=system, text=text)
 
