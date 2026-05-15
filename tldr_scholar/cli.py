@@ -145,8 +145,9 @@ def main(
         if result.hashtags:
             typer.echo(f"\n## Hashtags\n\n{' '.join(result.hashtags)}")
         if result.metadata.tokens_used is not None and not quiet:
+            tok_prefix = "~" if result.metadata.tokens_estimated else ""
             typer.echo("\n## Usage\n")
-            typer.echo(f"- Tokens: {result.metadata.tokens_used}")
+            typer.echo(f"- {tok_prefix}Tokens: {result.metadata.tokens_used}")
             if result.metadata.cost_usd is not None:
                 currency = result.metadata.cost_currency or "USD"
                 typer.echo(f"- Cost: {currency} {result.metadata.cost_usd:.6f}")
@@ -155,7 +156,8 @@ def main(
         if result.hashtags:
             typer.echo(" ".join(result.hashtags))
         if result.metadata.tokens_used is not None and not quiet:
-            parts = [f"Tokens: {result.metadata.tokens_used}"]
+            tok_prefix = "~" if result.metadata.tokens_estimated else ""
+            parts = [f"{tok_prefix}Tokens: {result.metadata.tokens_used}"]
             if result.metadata.cost_usd is not None:
                 currency = result.metadata.cost_currency or "USD"
                 parts.append(f"Cost: {currency} {result.metadata.cost_usd:.6f}")
