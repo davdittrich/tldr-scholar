@@ -1,7 +1,7 @@
 """Backend dispatch for tldr-scholar."""
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional, cast
 
 from loguru import logger
 
@@ -11,10 +11,8 @@ from tldr_scholar.backends.gemini import GeminiBackend
 from tldr_scholar.backends.lemonade import LemonadeBackend
 from tldr_scholar.backends.ollama import OllamaBackend
 
-try:
+if TYPE_CHECKING:
     from gemini_acp.client import GeminiUsage
-except ImportError:
-    GeminiUsage = None  # type: ignore[assignment,misc]
 
 _BACKEND_MAP: dict[str, type[BackendBase]] = {
     "gemini": GeminiBackend,
@@ -38,9 +36,10 @@ def get_backend(name: str, config: dict[str, Any] | None = None) -> BackendBase:
     cls = _BACKEND_MAP.get(name)
     if cls is None:
         raise ValueError(f"Unknown backend: {name}. Choose from: {', '.join(_BACKEND_MAP)}")
+    factory = cast(Callable[[dict[str, Any] | None], BackendBase], cls)
     if config and name in config and isinstance(config[name], dict):
-        return cls(config[name])
-    return cls(config)
+        return factory(config[name])
+    return factory(config)
 
 
 def run_with_fallback(
