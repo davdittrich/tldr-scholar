@@ -30,6 +30,7 @@ class SummaryRequest(BaseModel):
     hashtags: int = 0
     audience: AudienceEnum = AudienceEnum.EXPERT
     tone: ToneEnum = ToneEnum.PROFESSIONAL
+    persona: Optional[str] = None
     backend: Literal["auto", "gemini", "lemonade", "ollama", "extractive"] = "auto"
     backend_config: dict[str, Any] = {}
 
@@ -44,6 +45,7 @@ class SummaryMetadata(BaseModel):
     char_count: int = 0
     audience: AudienceEnum = AudienceEnum.EXPERT
     tone: ToneEnum = ToneEnum.PROFESSIONAL
+    persona: Optional[str] = None
     tokens_used: int | None = None
     cost_usd: float | None = None
     cost_currency: str | None = None
