@@ -11,10 +11,14 @@ from urllib.parse import urlparse
 import typer
 from loguru import logger
 
-from tldr_scholar import summarize_file, summarize_url
+from tldr_scholar import AudienceEnum, ToneEnum, summarize_file, summarize_url
 from tldr_scholar.config import load_config
+from tldr_scholar.ingest import (
+    EmptyTextError,
+    PasswordProtectedError,
+    UnsupportedInputError,
+)
 from tldr_scholar.prompts import SENTENCE_COUNTS
-from tldr_scholar.ingest import EmptyTextError, PasswordProtectedError, UnsupportedInputError
 
 app = typer.Typer(help="Academic text summarizer — PDF, URL, Markdown, text.")
 
@@ -28,6 +32,8 @@ def main(
     max_chars: Optional[int] = typer.Option(None, "--max-chars", help="Override length preset"),
     focus: str = typer.Option("main findings and novel insights", "--focus"),
     hashtags: int = typer.Option(0, "--hashtags", help="Number of hashtags to generate"),
+    audience: AudienceEnum = typer.Option(AudienceEnum.EXPERT, "--audience", help="Target audience"),
+    tone: ToneEnum = typer.Option(ToneEnum.PROFESSIONAL, "--tone", help="Desired tone"),
     output_format: str = typer.Option("text", "--format", help="text|json|markdown"),
     backend: str = typer.Option("auto", "--backend",
                                 help="gemini|lemonade|ollama|extractive|auto"),
@@ -104,13 +110,15 @@ def main(
         if parsed.scheme in ("http", "https"):
             result = summarize_url(
                 source, max_chars=effective_max_chars, focus=focus,
-                hashtags=hashtags, backend=backend, backend_config=backend_config,
+                hashtags=hashtags, audience=audience, tone=tone,
+                backend=backend, backend_config=backend_config,
                 mode=mode, sentence_count=sentence_count,
             )
         else:
             result = summarize_file(
                 source, max_chars=effective_max_chars, focus=focus,
-                hashtags=hashtags, backend=backend, backend_config=backend_config,
+                hashtags=hashtags, audience=audience, tone=tone,
+                backend=backend, backend_config=backend_config,
                 mode=mode, sentence_count=sentence_count,
             )
     except UnsupportedInputError as e:

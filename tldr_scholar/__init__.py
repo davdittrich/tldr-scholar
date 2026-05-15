@@ -19,11 +19,18 @@ from tldr_scholar.hashtags import (
     parse_hashtags_from_response,
 )
 from tldr_scholar.ingest import ingest
-from tldr_scholar.models import SummaryMetadata, SummaryRequest, SummaryResult
+from tldr_scholar.models import (
+    AudienceEnum,
+    SummaryMetadata,
+    SummaryRequest,
+    SummaryResult,
+    ToneEnum,
+)
 
 __all__ = [
     "summarize", "summarize_file", "summarize_url",
     "SummaryRequest", "SummaryResult", "SummaryMetadata",
+    "AudienceEnum", "ToneEnum",
 ]
 
 
@@ -44,6 +51,8 @@ def summarize(
     max_chars: int = 500,
     focus: str = "main findings and novel insights",
     hashtags: int = 0,
+    audience: AudienceEnum | str = AudienceEnum.EXPERT,
+    tone: ToneEnum | str = ToneEnum.PROFESSIONAL,
     backend: str = "auto",
     backend_config: dict[str, Any] | None = None,
     mode: str = "scientific",
@@ -66,6 +75,8 @@ def summarize(
             max_chars=max_chars,
             focus=focus,
             hashtags=hashtags,
+            audience=audience,  # type: ignore[arg-type]
+            tone=tone,          # type: ignore[arg-type]
             backend=backend,
             backend_config=backend_config or {},
         )
@@ -77,6 +88,8 @@ def summarize(
         focus=req.focus,
         hashtag_instruction=hashtag_instruction,
         backend=req.backend,
+        audience=req.audience,
+        tone=req.tone,
         config=req.backend_config if req.backend_config else None,
         mode=mode,
         sentence_count=sentence_count,
@@ -90,6 +103,8 @@ def summarize(
                 backend_used=backend_used,
                 max_chars=req.max_chars,
                 focus=req.focus,
+                audience=req.audience,
+                tone=req.tone,
             ),
         )
 
@@ -110,13 +125,15 @@ def summarize(
         max_chars=req.max_chars,
         focus=req.focus,
         char_count=len(summary_text.strip()),
+        audience=req.audience,
+        tone=req.tone,
     )
     if usage is not None:
         metadata.tokens_used = usage.tokens_used
         metadata.cost_usd = usage.cost_usd
         metadata.cost_currency = usage.cost_currency
-        metadata.tokens_estimated = usage.is_estimated
-        metadata.cost_estimated = usage.cost_is_estimated
+        metadata.tokens_estimated = usage.tokens_estimated
+        metadata.cost_estimated = usage.cost_estimated
 
     return SummaryResult(
         text=summary_text.strip(),
