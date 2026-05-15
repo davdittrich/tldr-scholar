@@ -1,6 +1,11 @@
 """Prompt templates for summarization backends."""
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from tldr_scholar.models import AudienceEnum, ToneEnum
+
 # Sentence counts by length preset
 SENTENCE_COUNTS = {"short": 3, "medium": 5, "long": 7}
 
@@ -20,10 +25,7 @@ only for broad context. Identify the core IMRAD elements: Context \
 
 Output Format:
 Provide exactly a {sentence_count}-sentence summary in approximately \
-{max_chars} characters, written in plain, simple language. Explain the \
-concepts as if teaching someone completely outside the field. Strip away \
-all dense academic jargon, complex formulas, and niche terminology, \
-translating the core ideas into clear, everyday language.
+{max_chars} characters. {audience_instruction}
 
 {sentence_structure}
 
@@ -40,32 +42,63 @@ If your draft fails this check, revise the inaccurate sentences before \
 providing the final output."""
 
 _SCIENTIFIC_SENTENCES = {
-    3: (
-        "Structure the sentences as follows:\n"
-        "Sentence 1: The general background and the specific problem being addressed.\n"
-        "Sentence 2: The methodology and the primary, most significant result.\n"
-        "Sentence 3: The broader implication of the findings, including limitations."
-    ),
-    5: (
-        "Structure the sentences exactly as follows:\n"
-        "Sentence 1: The general background of the topic.\n"
-        "Sentence 2: The specific problem or knowledge gap the authors are addressing.\n"
-        "Sentence 3: The broad methodology used to approach the problem.\n"
-        "Sentence 4: The primary, most significant result or data point uncovered.\n"
-        "Sentence 5: The broader implication of the findings, including a brief "
-        "mention of the study's limitations."
-    ),
-    7: (
-        "Structure the sentences as follows:\n"
-        "Sentence 1: The general background of the topic.\n"
-        "Sentence 2: The specific problem or knowledge gap being addressed.\n"
-        "Sentence 3: Why this problem matters or what prior work has missed.\n"
-        "Sentence 4: The broad methodology used to approach the problem.\n"
-        "Sentence 5: The primary, most significant result or data point.\n"
-        "Sentence 6: Secondary results or supporting evidence.\n"
-        "Sentence 7: The broader implication, including limitations and future directions."
-    ),
+    "expert": {
+        3: (
+            "Structure the sentences as follows:\n"
+            "Sentence 1: The general background and the specific problem being addressed.\n"
+            "Sentence 2: The methodology and the primary, most significant result.\n"
+            "Sentence 3: The broader implication of the findings, including limitations."
+        ),
+        5: (
+            "Structure the sentences exactly as follows:\n"
+            "Sentence 1: The general background of the topic.\n"
+            "Sentence 2: The specific problem or knowledge gap the authors are addressing.\n"
+            "Sentence 3: The broad methodology used to approach the problem.\n"
+            "Sentence 4: The primary, most significant result or data point uncovered.\n"
+            "Sentence 5: The broader implication of the findings, including a brief "
+            "mention of the study's limitations."
+        ),
+        7: (
+            "Structure the sentences as follows:\n"
+            "Sentence 1: The general background of the topic.\n"
+            "Sentence 2: The specific problem or knowledge gap being addressed.\n"
+            "Sentence 3: Why this problem matters or what prior work has missed.\n"
+            "Sentence 4: The broad methodology used to approach the problem.\n"
+            "Sentence 5: The primary, most significant result or data point.\n"
+            "Sentence 6: Secondary results or supporting evidence.\n"
+            "Sentence 7: The broader implication, including limitations and future directions."
+        ),
+    },
+    "layman": {
+        3: (
+            "Structure the sentences as follows:\n"
+            "Sentence 1: What the study is about and what big question it answers.\n"
+            "Sentence 2: The main discovery and why it matters in simple terms.\n"
+            "Sentence 3: What this means for the future and what we still don't know."
+        ),
+        5: (
+            "Structure the sentences exactly as follows:\n"
+            "Sentence 1: The general topic of the research.\n"
+            "Sentence 2: The simple question the researchers wanted to answer.\n"
+            "Sentence 3: How they did the study in broad strokes.\n"
+            "Sentence 4: The most important discovery they made.\n"
+            "Sentence 5: Why this is important for regular people and any major warnings."
+        ),
+        7: (
+            "Structure the sentences as follows:\n"
+            "Sentence 1: The big picture topic.\n"
+            "Sentence 2: The specific mystery the authors wanted to solve.\n"
+            "Sentence 3: Why regular people should care about this mystery.\n"
+            "Sentence 4: A simple explanation of how they studied it.\n"
+            "Sentence 5: The coolest or most useful thing they found.\n"
+            "Sentence 6: Other interesting bits they discovered.\n"
+            "Sentence 7: What this means for the world and what comes next."
+        ),
+    }
 }
+
+# Fallback/Default structure (same as expert)
+_SCIENTIFIC_SENTENCES["student"] = _SCIENTIFIC_SENTENCES["expert"]
 
 # ---------------------------------------------------------------------------
 # General mode — for non-academic text (blog posts, news, documents)
@@ -74,6 +107,7 @@ _SCIENTIFIC_SENTENCES = {
 GENERAL_SYSTEM_PROMPT = """\
 Summarize the following document in approximately {max_chars} characters \
 using exactly {sentence_count} sentences.
+{tone_instruction}
 Focus on: {focus}.
 Be concise, precise, and factual. Do not add information not in the source.
 
@@ -91,51 +125,129 @@ SINGLE_PROMPT_TEMPLATE = """\
 </document>"""
 
 
-def build_system_prompt(
-    mode: str,
-    max_chars: int,
-    focus: str,
-    hashtag_instruction: str,
-    sentence_count: int = 5,
-) -> str:
-    """Build the system prompt for the given mode."""
-    if mode == "scientific":
-        sentence_structure = _SCIENTIFIC_SENTENCES.get(
-            sentence_count,
-            _SCIENTIFIC_SENTENCES[5],  # fallback to medium
+class PromptBuilder:
+    """Class to build customized system and user prompts."""
+
+    def _get_audience_instruction(self, audience: AudienceEnum) -> str:
+        """Get instructions for the specific audience persona."""
+        from tldr_scholar.models import AudienceEnum
+        if audience == AudienceEnum.EXPERT:
+            return (
+                "Write in plain, simple language but use precise technical terminology. "
+                "Focus on methodology nuances and specific data points. Explain the concepts "
+                "as if teaching someone with a PhD in this field."
+            )
+        elif audience == AudienceEnum.LAYMAN:
+            return (
+                "Explain the concepts using simple analogies and clear, everyday language. "
+                "Avoid all dense academic jargon and niche terminology. Focus on the 'big picture' "
+                "impact as if teaching someone completely outside the field."
+            )
+        elif audience == AudienceEnum.STUDENT:
+            return (
+                "Explain the concepts clearly, defining any necessary technical terms. "
+                "Focus on the core logic and findings. Translate complex ideas into clear language "
+                "suitable for a student or non-expert with some interest."
+            )
+        return ""
+
+    def _get_tone_instruction(self, tone: ToneEnum) -> str:
+        """Get instructions for the specific tone."""
+        from tldr_scholar.models import ToneEnum
+        if tone == ToneEnum.CASUAL:
+            return "Use a conversational and approachable tone."
+        elif tone == ToneEnum.ANALYTICAL:
+            return "Use a critical and analytical tone, focusing on logic and evidence."
+        elif tone == ToneEnum.PROFESSIONAL:
+            return "Use a professional, neutral, and objective tone."
+        return ""
+
+    def _get_scientific_structure(self, sentence_count: int, audience: AudienceEnum) -> str:
+        """Get the IMRAD structure instructions based on audience and length."""
+        from tldr_scholar.models import AudienceEnum
+        
+        # Determine persona key
+        if audience == AudienceEnum.LAYMAN:
+            persona = "layman"
+        else:
+            persona = "expert"
+            
+        persona_structures = _SCIENTIFIC_SENTENCES.get(persona, _SCIENTIFIC_SENTENCES["expert"])
+        return persona_structures.get(sentence_count, persona_structures[5])
+
+    def build_system_prompt(
+        self,
+        mode: str,
+        max_chars: int,
+        focus: str,
+        hashtag_instruction: str,
+        sentence_count: int = 5,
+        audience: AudienceEnum | None = None,
+        tone: ToneEnum | None = None,
+    ) -> str:
+        """Build the system prompt for the given mode and audience."""
+        from tldr_scholar.models import AudienceEnum, ToneEnum
+        
+        # Set defaults if not provided
+        if audience is None:
+            audience = AudienceEnum.EXPERT
+        if tone is None:
+            tone = ToneEnum.PROFESSIONAL
+
+        if mode == "scientific":
+            sentence_structure = self._get_scientific_structure(sentence_count, audience)
+            focus_instruction = (
+                f"Thematic focus: {focus}."
+                if focus and focus != "main findings and novel insights"
+                else ""
+            )
+            audience_instr = self._get_audience_instruction(audience)
+            
+            return SCIENTIFIC_SYSTEM_PROMPT.format(
+                max_chars=max_chars,
+                sentence_count=sentence_count,
+                audience_instruction=audience_instr,
+                sentence_structure=sentence_structure,
+                focus_instruction=focus_instruction,
+                hashtag_instruction=hashtag_instruction,
+            ).strip()
+        else:
+            tone_instr = self._get_tone_instruction(tone)
+            return GENERAL_SYSTEM_PROMPT.format(
+                max_chars=max_chars,
+                sentence_count=sentence_count,
+                tone_instruction=tone_instr,
+                focus=focus,
+                hashtag_instruction=hashtag_instruction,
+            ).strip()
+
+    def build_single_prompt(
+        self,
+        text: str,
+        mode: str,
+        max_chars: int,
+        focus: str,
+        hashtag_instruction: str,
+        sentence_count: int = 5,
+        audience: AudienceEnum | None = None,
+        tone: ToneEnum | None = None,
+    ) -> str:
+        """Build the full prompt for single-prompt APIs (Gemini, Ollama)."""
+        system = self.build_system_prompt(
+            mode, max_chars, focus, hashtag_instruction, sentence_count, audience, tone
         )
-        focus_instruction = (
-            f"Thematic focus: {focus}."
-            if focus and focus != "main findings and novel insights"
-            else ""
-        )
-        return SCIENTIFIC_SYSTEM_PROMPT.format(
-            max_chars=max_chars,
-            sentence_count=sentence_count,
-            sentence_structure=sentence_structure,
-            focus_instruction=focus_instruction,
-            hashtag_instruction=hashtag_instruction,
-        ).strip()
-    else:
-        return GENERAL_SYSTEM_PROMPT.format(
-            max_chars=max_chars,
-            sentence_count=sentence_count,
-            focus=focus,
-            hashtag_instruction=hashtag_instruction,
-        ).strip()
+        return SINGLE_PROMPT_TEMPLATE.format(system_prompt=system, text=text)
 
 
-def build_single_prompt(
-    text: str,
-    mode: str,
-    max_chars: int,
-    focus: str,
-    hashtag_instruction: str,
-    sentence_count: int = 5,
-) -> str:
-    """Build the full prompt for single-prompt APIs (Gemini, Ollama).
+# ---------------------------------------------------------------------------
+# Legacy functional interface for backward compatibility
+# ---------------------------------------------------------------------------
 
-    Wraps the text in <document> delimiters.
-    """
-    system = build_system_prompt(mode, max_chars, focus, hashtag_instruction, sentence_count)
-    return SINGLE_PROMPT_TEMPLATE.format(system_prompt=system, text=text)
+def build_system_prompt(*args, **kwargs) -> str:
+    """Backward compatible wrapper for PromptBuilder.build_system_prompt."""
+    return PromptBuilder().build_system_prompt(*args, **kwargs)
+
+
+def build_single_prompt(*args, **kwargs) -> str:
+    """Backward compatible wrapper for PromptBuilder.build_single_prompt."""
+    return PromptBuilder().build_single_prompt(*args, **kwargs)
