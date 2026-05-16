@@ -13,7 +13,7 @@ from tldr_scholar.backends.ollama import OllamaBackend
 
 if TYPE_CHECKING:
     from gemini_acp.client import GeminiUsage  # type: ignore[reportAttributeAccessIssue]
-    from tldr_scholar.models import AudienceEnum, ToneEnum
+    from tldr_scholar.types import AudienceEnum, ToneEnum
 
 _BACKEND_MAP: dict[str, type[BackendBase]] = {
     "gemini": GeminiBackend,

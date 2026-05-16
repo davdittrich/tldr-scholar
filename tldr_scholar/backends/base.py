@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
-    from tldr_scholar.models import AudienceEnum, ToneEnum
+    from tldr_scholar.types import AudienceEnum, ToneEnum
 
 
 class BackendBase(ABC):

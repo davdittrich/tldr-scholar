@@ -9,6 +9,7 @@ import yaml
 from loguru import logger
 
 from tldr_scholar.config import DEFAULT_PERSONA_DIR
+from tldr_scholar.personas import Persona
 
 try:
     from gemini_acp import summarize_via_gemini, ACP_AVAILABLE
@@ -148,7 +149,7 @@ def main():
         sys.exit(1)
 
     logger.info(f"Refining deep persona: {args.name}")
-    print("-" * 40)
+    logger.info("-" * 40)
 
     # Identify flags for refinement
     confidence = existing_data.get("attribute_confidence", {})
@@ -182,7 +183,7 @@ def main():
             logger.warning("Gemini failed to generate a probe case.")
             continue
             
-        print("\n" + probe.strip())
+        logger.info("\n" + probe.strip())
         ans = input("\nYour Resolution > ").strip()
         if ans:
             results.append(f"Probe: {probe.strip()}\nUser Resolution: {ans}")
@@ -215,8 +216,17 @@ def main():
             logger.error("LLM output is not a valid YAML dictionary.")
             sys.exit(1)
             
-        # Perform deep merge to prevent data loss of fields LLM might omit
-        updated_data = deep_merge(existing_data, new_data)
+        # Perform deep merge
+        updated_data = deep_merge(existing_data.copy(), new_data)
+        
+        # Mandatory Pydantic validation before save
+        try:
+            Persona.model_validate(updated_data)
+        except Exception as e:
+            logger.error(f"Refined profile failed validation: {e}")
+            logger.debug(f"Malformed YAML output:\n{clean_result}")
+            sys.exit(1)
+            sys.exit(1)
             
         with open(persona_path, "w") as f:
             yaml.dump(updated_data, f, sort_keys=False)

@@ -5,6 +5,7 @@ import re
 from typing import TYPE_CHECKING
 
 from tldr_scholar.types import AudienceEnum, ToneEnum
+from tldr_scholar.personas import PersonaManager
 
 if TYPE_CHECKING:
     pass
@@ -167,7 +168,6 @@ class PromptBuilder:
     """Class to build customized system and user prompts."""
 
     def __init__(self):
-        from tldr_scholar.personas import PersonaManager
         self._persona_manager = PersonaManager()
 
     def _get_audience_instruction(self, audience: AudienceEnum) -> str:

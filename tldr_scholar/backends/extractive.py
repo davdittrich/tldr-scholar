@@ -11,7 +11,7 @@ from sumy.summarizers.lex_rank import LexRankSummarizer
 from tldr_scholar.backends.base import BackendBase
 
 if TYPE_CHECKING:
-    from tldr_scholar.models import AudienceEnum, ToneEnum
+    from tldr_scholar.types import AudienceEnum, ToneEnum
 
 
 class ExtractiveBackend(BackendBase):

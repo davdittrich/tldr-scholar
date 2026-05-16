@@ -20,12 +20,11 @@ from tldr_scholar.hashtags import (
 )
 from tldr_scholar.ingest import ingest
 from tldr_scholar.models import (
-    AudienceEnum,
     SummaryMetadata,
     SummaryRequest,
     SummaryResult,
-    ToneEnum,
 )
+from tldr_scholar.types import AudienceEnum, ToneEnum
 
 __all__ = [
     "summarize", "summarize_file", "summarize_url",
@@ -52,8 +51,8 @@ def summarize(
     focus: str = "main findings and novel insights",
     hashtags: int = 0,
     hashtag_style: str = "lowercase",
-    audience: AudienceEnum | str = AudienceEnum.EXPERT,
-    tone: ToneEnum | str = ToneEnum.PROFESSIONAL,
+    audience: AudienceEnum = AudienceEnum.EXPERT,
+    tone: ToneEnum = ToneEnum.PROFESSIONAL,
     backend: str = "auto",
     backend_config: dict[str, Any] | None = None,
     mode: str = "scientific",
@@ -77,9 +76,9 @@ def summarize(
             max_chars=max_chars,
             focus=focus,
             hashtags=hashtags,
-            hashtag_style=hashtag_style,  # type: ignore[arg-type]
-            audience=audience,  # type: ignore[arg-type]
-            tone=tone,          # type: ignore[arg-type]
+            hashtag_style=hashtag_style,
+            audience=audience,
+            tone=tone,
             persona=persona,
             backend=backend,
             backend_config=backend_config or {},

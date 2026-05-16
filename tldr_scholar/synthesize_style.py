@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Utility to synthesize a deep writing style persona from text samples."""
+"""Utility to synthesize a writing style profile from a corpus of posts."""
 import argparse
 import json
 import sys
@@ -17,98 +17,64 @@ except ImportError:
     summarize_via_gemini = None
     ACP_AVAILABLE = False
 
-SYNTHESIS_PROMPT = """\
-Analyze the writing style AND underlying intent of the following text samples. 
-Provide a detailed writing style profile in YAML format with the following fields:
-
-- name: A short identifier (lowercase, no spaces)
-- role: A brief description of the persona (e.g., "Academic Economist")
-- tone: 2-3 adjectives describing the voice (e.g., "analytical, objective")
-- structure_pattern: "stitched" or "bullet_points"
-- hashtag_style: "lowercase" or "pascal"
-
-# Deep Intent Fields (Crucial)
-- agenda: What is the primary purpose or "mission" of this author's writing?
-- worldview: What is the author's implied philosophical or political leaning?
-- revelation_priorities: What substantive arguments/data points does this author amplify?
-- suppression_rules: What significant statements in a source does this author intentionally ignore?
-- substantive_anchors: What core evidence types does this author rely on?
-- pivot_logic: How are source claims re-indexed into the worldview?
-- rhetorical_strategy: How does this persona build an argument?
-- identifiable_nuances: List of linguistic quirks/idioms.
-
-Return ONLY the YAML block.
-
-Samples:
-{text}
-"""
-
 DECOMPOSITION_PROMPT = """\
-Analyze the following substantive sections of a research paper or article 
-(Introduction, Discussion, Conclusion). 
-
-Decompose the text into its constituent "Atomic Statements"—distinct claims, 
-empirical findings, or major conclusions.
-
-For each statement, provide:
-- id: A unique short ID (e.g., claim_1)
-- content: The substantive text of the claim.
-- section: Which section it originated from (introduction, discussion, conclusion).
-
-Return ONLY a YAML list of these objects.
+Analyze the following text and decompose it into a list of atomic statements, 
+claims, and conclusions.
 
 Text:
 {text}
+
+Return ONLY a YAML list of objects with 'id' and 'claim' fields.
 """
 
 CORRELATION_PROMPT = """\
-Compare the following user social media post against a list of "Atomic Statements" 
-from the source material the user is sharing.
+Compare the user's social media post against the following atomic statements 
+from the source text.
 
-Identify which statements were:
-- shared: Directly mentioned or summarized.
-- suppressed: Significant source claims the user ignored.
-- pivoted: Claims the user transformed or re-authored into their own worldview.
-
-For each statement, provide:
-- statement_id: The ID of the atomic statement.
-- status: shared, suppressed, or pivoted.
-- intent: Inferred local intent (why was this shared/suppressed/pivoted?).
-
-Return ONLY a YAML list of these correlation objects.
-
-Atomic Statements:
+Statements:
 {statements}
 
 User Post:
 {post_text}
+
+For each statement, determine if it was:
+1. shared: The post revealed this claim.
+2. suppressed: The post ignored this claim (despite it being substantive).
+3. pivoted: The post transformed this claim into a different argument.
+
+Return ONLY a YAML list of objects with 'statement_id', 'status', and 'intent'.
+"""
+
+SYNTHESIS_PROMPT = """\
+Based on the following corpus of writing samples and source documents, 
+synthesize a deep cognitive architecture for an AI writing assistant.
+
+Corpus:
+{text}
+
+Focus on:
+- agenda: High-level purpose of the persona's writing.
+- worldview: Implied philosophical/political leaning.
+- revelation_priorities: What to prioritize.
+- suppression_rules: What to ignore or filter.
+- substantive_anchors: Core recurring topics or frames.
+- pivot_logic: How claims are reframed.
+- rhetorical_strategy: Linguistic patterns.
+- identifiable_nuances: Unique stylistic 'fingerprints'.
+
+Return ONLY a YAML dictionary.
 """
 
 DEEP_SYNTHESIS_PROMPT = """\
-Analyze the following collection of Atomic Delta Reports. Each report 
-represents the differential between a substantive source and a user's post.
-
-Synthesize a comprehensive "Cognitive Architecture" for this persona.
-Identify global rules for revelation, suppression, and pivoting.
-
-Provide a detailed YAML profile with:
-- profile:
-    agenda: Primary mission.
-    worldview: Implied philosophical/political leaning.
-    revelation_priorities: List of substantive arguments/data points amplified.
-    suppression_rules: Content intentionally ignored or deemed deceptive.
-    substantive_anchors: Core evidence types relied on.
-    pivot_logic: How source claims are re-indexed into the worldview.
-    rhetorical_strategy: How the persona builds an argument.
-    identifiable_nuances: List of linguistic quirks/idioms.
-- confidence:
-    Assign a confidence score (0-100) to each of the above fields based 
-    on evidence consistency across reports.
-
-Return ONLY the YAML block.
+Synthesize a global persona profile from the following atomic delta reports.
 
 Delta Reports:
 {reports}
+
+Focus on identifying recurring intents and systematic revelation/suppression patterns.
+Quantify your confidence (0-100) for each major attribute.
+
+Return ONLY a YAML dictionary with 'profile' and 'confidence' keys.
 """
 
 
@@ -131,6 +97,9 @@ def decompose_source(text: str) -> list[dict]:
     try:
         data = yaml.safe_load(clean_result)
         if isinstance(data, list):
+            for i, item in enumerate(data):
+                if isinstance(item, dict) and 'id' not in item:
+                    item['id'] = item.get('statement_id', f'c{i+1}')
             return data
         return []
     except Exception:
@@ -190,12 +159,11 @@ def synthesize_deep_profile(reports: list[list[dict]]) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Synthesize deep writing style from samples.")
-    parser.add_argument("source", type=Path, help="File containing text samples or JSONL corpus")
-    parser.add_argument("--name", help="Override persona name")
+    parser = argparse.ArgumentParser(description="Synthesize writing style from corpus.")
+    parser.add_argument("source", type=Path, help="Path to text or JSONL corpus")
+    parser.add_argument("--format", choices=["text", "jsonl"], default="text")
+    parser.add_argument("--name", help="Name for the persona")
     parser.add_argument("--output", type=Path, help="Output YAML path")
-    parser.add_argument("--format", choices=["text", "jsonl"], default="text", 
-                        help="Input format (text for raw samples, jsonl for post+url pairs)")
     args = parser.parse_args()
 
     if not args.source.exists():
@@ -222,7 +190,6 @@ def main():
                         continue
                     
                     logger.info(f"Processing atomic delta for URL: {url}")
-                    # Fetch substantive sections (mocking full IMRAD fetch for now, using ingest)
                     source_text, _ = ingest(url)
                     if not source_text:
                         continue
@@ -248,42 +215,39 @@ def main():
             logger.error("Failed to synthesize deep profile.")
             sys.exit(1)
         
-        # Merge profile and confidence into flat dict for YAML
         data = synth_data.get("profile", {})
         if not isinstance(data, dict):
             data = {}
         data["attribute_confidence"] = synth_data.get("confidence", {})
 
     else:
-        # Legacy/Shallow single-pass synthesis
+        # Enforce Atomic Pipeline as Default for text
         text = args.source.read_text()
-        logger.info("Analyzing deep style and intent via single-pass synthesis...")
-        prompt = SYNTHESIS_PROMPT.format(text=text)
-        result, _ = summarize_via_gemini(text="", prompt=prompt)
-        
-        if not result:
-            logger.error("Gemini failed to produce a profile.")
+        logger.info(f"Executing atomic pipeline for text source: {args.source}")
+        chunks = [text[i:i+1000] for i in range(0, len(text), 1000)]
+        reports = []
+        for i, chunk in enumerate(chunks[:10]):
+            logger.info(f"Processing text partition {i+1}/{min(10, len(chunks))}...")
+            statements = decompose_source(chunk)
+            if not statements: continue
+            delta = correlate_post_to_source(statements, chunk)
+            if delta: reports.append(delta)
+            
+        if not reports:
+            logger.error("No valid delta reports generated.")
             sys.exit(1)
-
-        clean_result = result.strip()
-        if "```yaml" in clean_result:
-            clean_result = clean_result.split("```yaml")[1].split("```")[0].strip()
-        elif "```" in clean_result:
-            clean_result = clean_result.split("```")[1].split("```")[0].strip()
-
-        try:
-            data = yaml.safe_load(clean_result)
-            if not isinstance(data, dict):
-                logger.error(f"LLM output is not a valid YAML dictionary: {clean_result}")
-                sys.exit(1)
-        except Exception as e:
-            logger.error(f"Error parsing YAML: {e}")
+            
+        synth_data = synthesize_deep_profile(reports)
+        if not synth_data:
             sys.exit(1)
+        data = synth_data.get("profile", {})
+        if not isinstance(data, dict):
+            data = {}
+        data["attribute_confidence"] = synth_data.get("confidence", {})
 
     if args.name:
         data["name"] = args.name
 
-    # Save logic
     name = data.get("name", args.source.stem) if isinstance(data, dict) else args.source.stem
     output_path = args.output or DEFAULT_PERSONA_DIR / f"{name}.yaml"
     output_path.parent.mkdir(parents=True, exist_ok=True)

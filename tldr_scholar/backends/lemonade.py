@@ -14,7 +14,7 @@ from tldr_scholar.backends.base import BackendBase
 from tldr_scholar.prompts import PromptBuilder
 
 if TYPE_CHECKING:
-    from tldr_scholar.models import AudienceEnum, ToneEnum
+    from tldr_scholar.types import AudienceEnum, ToneEnum
 
 _MODEL_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 _cached_model: Optional[str] = None

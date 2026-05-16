@@ -10,7 +10,7 @@ from tldr_scholar.config import GeminiConfig
 from tldr_scholar.prompts import PromptBuilder
 
 if TYPE_CHECKING:
-    from tldr_scholar.models import AudienceEnum, ToneEnum
+    from tldr_scholar.types import AudienceEnum, ToneEnum
 
 try:
     from gemini_acp import ACP_AVAILABLE, summarize_via_gemini

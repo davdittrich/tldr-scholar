@@ -11,7 +11,8 @@ from urllib.parse import urlparse
 import typer
 from loguru import logger
 
-from tldr_scholar import AudienceEnum, ToneEnum, summarize_file, summarize_url
+from tldr_scholar.types import AudienceEnum, ToneEnum
+from tldr_scholar import summarize_file, summarize_url
 from tldr_scholar.config import load_config
 from tldr_scholar.ingest import (
     EmptyTextError,

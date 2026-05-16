@@ -10,7 +10,7 @@ from tldr_scholar.backends.base import BackendBase
 from tldr_scholar.prompts import PromptBuilder
 
 if TYPE_CHECKING:
-    from tldr_scholar.models import AudienceEnum, ToneEnum
+    from tldr_scholar.types import AudienceEnum, ToneEnum
 
 
 class OllamaBackend(BackendBase):
