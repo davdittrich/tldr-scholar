@@ -76,6 +76,31 @@ User Post:
 {post_text}
 """
 
+DEEP_SYNTHESIS_PROMPT = """\
+Analyze the following collection of Atomic Delta Reports. Each report 
+represents the differential between a substantive source and a user's post.
+
+Synthesize a comprehensive "Cognitive Architecture" for this persona.
+Identify global rules for revelation, suppression, and pivoting.
+
+Provide a detailed YAML profile with:
+- profile:
+    agenda: Primary mission.
+    worldview: Implied philosophical/political leaning.
+    revelation_priorities: List of substantive arguments/data points amplified.
+    suppression_rules: Content intentionally ignored or deemed deceptive.
+    substantive_anchors: Core evidence types relied on.
+    pivot_logic: How source claims are re-indexed into the worldview.
+- confidence:
+    Assign a confidence score (0-100) to each of the above fields based 
+    on evidence consistency across reports.
+
+Return ONLY the YAML block.
+
+Delta Reports:
+{reports}
+"""
+
 
 def decompose_source(text: str) -> list[dict]:
     """Decompose source text into atomic statements via LLM."""
@@ -126,6 +151,32 @@ def correlate_post_to_source(statements: list[dict], post_text: str) -> list[dic
         return []
     except Exception:
         return []
+
+
+def synthesize_deep_profile(reports: list[list[dict]]) -> dict:
+    """Synthesize global rules and confidence scores from atomic deltas."""
+    if summarize_via_gemini is None or not ACP_AVAILABLE:
+        return {}
+
+    reports_yaml = yaml.dump(reports)
+    prompt = DEEP_SYNTHESIS_PROMPT.format(reports=reports_yaml)
+    result, _ = summarize_via_gemini(text="", prompt=prompt)
+    if not result:
+        return {}
+
+    clean_result = result.strip()
+    if "```yaml" in clean_result:
+        clean_result = clean_result.split("```yaml")[1].split("```")[0].strip()
+    elif "```" in clean_result:
+        clean_result = clean_result.split("```")[1].split("```")[0].strip()
+
+    try:
+        data = yaml.safe_load(clean_result)
+        if isinstance(data, dict):
+            return data
+        return {}
+    except Exception:
+        return {}
 
 
 def main():
