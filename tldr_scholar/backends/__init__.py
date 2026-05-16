@@ -53,6 +53,8 @@ def run_with_fallback(
     config: dict[str, Any] | None = None,
     mode: str = "scientific",
     sentence_count: int = 5,
+    persona: str | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> tuple[Optional[str], str, GeminiUsage | None]:
     """Run summarization with optional fallback chain.
 
@@ -68,7 +70,8 @@ def run_with_fallback(
             result = b.summarize(
                 text, max_chars, focus, hashtag_instruction,
                 audience=audience, tone=tone,
-                mode=mode, sentence_count=sentence_count
+                mode=mode, sentence_count=sentence_count,
+                persona=persona, metadata=metadata
             )
             if result:
                 usage = getattr(b, "_last_usage", None)
@@ -79,7 +82,8 @@ def run_with_fallback(
         result = b.summarize(
             text, max_chars, focus, hashtag_instruction,
             audience=audience, tone=tone,
-            mode=mode, sentence_count=sentence_count
+            mode=mode, sentence_count=sentence_count,
+            persona=persona, metadata=metadata
         )
         if result:
             usage = getattr(b, "_last_usage", None)

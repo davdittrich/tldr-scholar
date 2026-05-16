@@ -1,7 +1,7 @@
 """Extractive summarization backend using LexRank."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from loguru import logger
 from sumy.nlp.tokenizers import Tokenizer
@@ -30,10 +30,12 @@ class ExtractiveBackend(BackendBase):
         tone: ToneEnum,
         mode: str = "scientific",
         sentence_count: int = 5,
+        persona: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> Optional[str]:
         """Summarize via LexRank (extractive).
 
-        Ignores hashtag_instruction, audience, and tone (limitations of extractive).
+        Ignores hashtag_instruction, audience, tone, and persona (limitations of extractive).
         Uses focus keywords for simple biasing if provided.
         """
         try:

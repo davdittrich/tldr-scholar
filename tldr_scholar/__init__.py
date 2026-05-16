@@ -51,12 +51,14 @@ def summarize(
     max_chars: int = 500,
     focus: str = "main findings and novel insights",
     hashtags: int = 0,
+    hashtag_style: str = "lowercase",
     audience: AudienceEnum | str = AudienceEnum.EXPERT,
     tone: ToneEnum | str = ToneEnum.PROFESSIONAL,
     backend: str = "auto",
     backend_config: dict[str, Any] | None = None,
     mode: str = "scientific",
     sentence_count: int = 5,
+    persona: str | None = None,
 ) -> SummaryResult:
     """Summarize text. Accepts either text= or request=, not both.
 
@@ -75,13 +77,15 @@ def summarize(
             max_chars=max_chars,
             focus=focus,
             hashtags=hashtags,
+            hashtag_style=hashtag_style,  # type: ignore[arg-type]
             audience=audience,  # type: ignore[arg-type]
             tone=tone,          # type: ignore[arg-type]
+            persona=persona,
             backend=backend,
             backend_config=backend_config or {},
         )
 
-    hashtag_instruction = build_hashtag_instruction(req.hashtags)
+    hashtag_instruction = build_hashtag_instruction(req.hashtags, style=req.hashtag_style)
     response, backend_used, usage = run_with_fallback(
         text=req.text,
         max_chars=req.max_chars,
@@ -93,6 +97,7 @@ def summarize(
         config=req.backend_config if req.backend_config else None,
         mode=mode,
         sentence_count=sentence_count,
+        persona=req.persona,
     )
 
     if not response:
@@ -105,13 +110,15 @@ def summarize(
                 focus=req.focus,
                 audience=req.audience,
                 tone=req.tone,
+                persona=req.persona,
+                hashtag_style=req.hashtag_style,
             ),
         )
 
     # Hashtag dispatch: extractive uses TF-IDF, LLM backends parse from response
     if backend_used == "extractive" and req.hashtags > 0:
         summary_text = response
-        hashtag_list = generate_hashtags_tfidf(req.text, req.hashtags)
+        hashtag_list = generate_hashtags_tfidf(req.text, req.hashtags, style=req.hashtag_style)
     elif req.hashtags > 0:
         summary_text, hashtag_list = parse_hashtags_from_response(response)
         if len(hashtag_list) < req.hashtags:
@@ -127,6 +134,8 @@ def summarize(
         char_count=len(summary_text.strip()),
         audience=req.audience,
         tone=req.tone,
+        persona=req.persona,
+        hashtag_style=req.hashtag_style,
     )
     if usage is not None:
         metadata.tokens_used = usage.tokens_used

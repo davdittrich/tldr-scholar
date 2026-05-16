@@ -28,6 +28,7 @@ class SummaryRequest(BaseModel):
     max_chars: int = 500
     focus: str = "main findings and novel insights"
     hashtags: int = 0
+    hashtag_style: Literal["lowercase", "pascal"] = "lowercase"
     audience: AudienceEnum = AudienceEnum.EXPERT
     tone: ToneEnum = ToneEnum.PROFESSIONAL
     persona: Optional[str] = None
@@ -46,6 +47,7 @@ class SummaryMetadata(BaseModel):
     audience: AudienceEnum = AudienceEnum.EXPERT
     tone: ToneEnum = ToneEnum.PROFESSIONAL
     persona: Optional[str] = None
+    hashtag_style: Literal["lowercase", "pascal"] = "lowercase"
     tokens_used: int | None = None
     cost_usd: float | None = None
     cost_currency: str | None = None

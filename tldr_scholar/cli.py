@@ -32,8 +32,10 @@ def main(
     max_chars: Optional[int] = typer.Option(None, "--max-chars", help="Override length preset"),
     focus: str = typer.Option("main findings and novel insights", "--focus"),
     hashtags: int = typer.Option(0, "--hashtags", help="Number of hashtags to generate"),
+    hashtag_style: str = typer.Option("lowercase", "--hashtag-style", help="lowercase|pascal"),
     audience: AudienceEnum = typer.Option(AudienceEnum.EXPERT, "--audience", help="Target audience"),
     tone: ToneEnum = typer.Option(ToneEnum.PROFESSIONAL, "--tone", help="Desired tone"),
+    persona: Optional[str] = typer.Option(None, "--persona", help="Persona name (e.g. stitched)"),
     output_format: str = typer.Option("text", "--format", help="text|json|markdown"),
     backend: str = typer.Option("auto", "--backend",
                                 help="gemini|lemonade|ollama|extractive|auto"),
@@ -61,6 +63,11 @@ def main(
     # Validate format
     if output_format not in ("text", "json", "markdown"):
         typer.echo(f"Invalid format '{output_format}'. Choose: text, json, markdown", err=True)
+        raise typer.Exit(code=2)
+
+    # Validate hashtag style
+    if hashtag_style not in ("lowercase", "pascal"):
+        typer.echo(f"Invalid hashtag style '{hashtag_style}'. Choose: lowercase, pascal", err=True)
         raise typer.Exit(code=2)
 
     # Logging
@@ -107,20 +114,23 @@ def main(
     # Run summarization
     try:
         parsed = urlparse(source)
+        kwargs = {
+            "max_chars": effective_max_chars,
+            "focus": focus,
+            "hashtags": hashtags,
+            "hashtag_style": hashtag_style,
+            "audience": audience,
+            "tone": tone,
+            "backend": backend,
+            "backend_config": backend_config,
+            "mode": mode,
+            "sentence_count": sentence_count,
+            "persona": persona,
+        }
         if parsed.scheme in ("http", "https"):
-            result = summarize_url(
-                source, max_chars=effective_max_chars, focus=focus,
-                hashtags=hashtags, audience=audience, tone=tone,
-                backend=backend, backend_config=backend_config,
-                mode=mode, sentence_count=sentence_count,
-            )
+            result = summarize_url(source, **kwargs)
         else:
-            result = summarize_file(
-                source, max_chars=effective_max_chars, focus=focus,
-                hashtags=hashtags, audience=audience, tone=tone,
-                backend=backend, backend_config=backend_config,
-                mode=mode, sentence_count=sentence_count,
-            )
+            result = summarize_file(source, **kwargs)
     except UnsupportedInputError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(code=2)

@@ -36,6 +36,8 @@ class GeminiBackend(BackendBase):
         tone: ToneEnum,
         mode: str = "scientific",
         sentence_count: int = 5,
+        persona: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> Optional[str]:
         if summarize_via_gemini is None:
             logger.debug("gemini-acp not installed")
@@ -54,6 +56,8 @@ class GeminiBackend(BackendBase):
             sentence_count=sentence_count,
             audience=audience,
             tone=tone,
+            persona=persona,
+            metadata=metadata,
         )
         text_result, usage = summarize_via_gemini(
             text="",  # text already embedded in prompt via <document> delimiters

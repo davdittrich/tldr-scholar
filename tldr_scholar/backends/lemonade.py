@@ -49,6 +49,8 @@ class LemonadeBackend(BackendBase):
         tone: ToneEnum,
         mode: str = "scientific",
         sentence_count: int = 5,
+        persona: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> Optional[str]:
         model = self._model
         if not model:
@@ -68,6 +70,9 @@ class LemonadeBackend(BackendBase):
             sentence_count=sentence_count,
             audience=audience,
             tone=tone,
+            persona=persona,
+            text=text,
+            metadata=metadata,
         )
         try:
             response = httpx.post(

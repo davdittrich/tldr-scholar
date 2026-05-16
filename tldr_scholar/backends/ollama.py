@@ -30,6 +30,8 @@ class OllamaBackend(BackendBase):
         tone: ToneEnum,
         mode: str = "scientific",
         sentence_count: int = 5,
+        persona: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> Optional[str]:
         prompt = PromptBuilder().build_single_prompt(
             text=text,
@@ -40,6 +42,8 @@ class OllamaBackend(BackendBase):
             sentence_count=sentence_count,
             audience=audience,
             tone=tone,
+            persona=persona,
+            metadata=metadata,
         )
         try:
             response = httpx.post(
