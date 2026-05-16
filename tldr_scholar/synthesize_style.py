@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Utility to synthesize a deep writing style persona from text samples."""
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -8,6 +9,7 @@ import yaml
 from loguru import logger
 
 from tldr_scholar.config import DEFAULT_PERSONA_DIR
+from tldr_scholar.ingest import ingest
 
 try:
     from gemini_acp import summarize_via_gemini, ACP_AVAILABLE
@@ -28,9 +30,12 @@ Provide a detailed writing style profile in YAML format with the following field
 # Deep Intent Fields (Crucial)
 - agenda: What is the primary purpose or "mission" of this author's writing?
 - worldview: What is the author's implied philosophical or political leaning?
-- extraction_filter: What specific types of information does this author prioritize 
-  (e.g., p-values, funding sources, power dynamics) and what do they explicitly ignore?
-- persuasion_goal: What is the author trying to convince their readers of in the long run?
+- revelation_priorities: What substantive arguments/data points does this author amplify?
+- suppression_rules: What significant statements in a source does this author intentionally ignore?
+- substantive_anchors: What core evidence types does this author rely on?
+- pivot_logic: How are source claims re-indexed into the worldview?
+- rhetorical_strategy: How does this persona build an argument?
+- identifiable_nuances: List of linguistic quirks/idioms.
 
 Return ONLY the YAML block.
 
@@ -186,57 +191,106 @@ def synthesize_deep_profile(reports: list[list[dict]]) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description="Synthesize deep writing style from samples.")
-    parser.add_argument("source", type=Path, help="File containing text samples")
+    parser.add_argument("source", type=Path, help="File containing text samples or JSONL corpus")
     parser.add_argument("--name", help="Override persona name")
     parser.add_argument("--output", type=Path, help="Output YAML path")
+    parser.add_argument("--format", choices=["text", "jsonl"], default="text", 
+                        help="Input format (text for raw samples, jsonl for post+url pairs)")
     args = parser.parse_args()
 
     if not args.source.exists():
         logger.error(f"Source file {args.source} not found")
         sys.exit(1)
 
-    text = args.source.read_text()
-    
     if summarize_via_gemini is None or not ACP_AVAILABLE:
         logger.error("gemini-acp not installed or available. Cannot perform analysis.")
         sys.exit(1)
 
-    logger.info("Analyzing deep style and intent via Gemini...")
-    # For now, we use a single synthesis pass if no sources provided
-    # Full atomic pipeline requires structured data (posts + linked sources)
-    prompt = SYNTHESIS_PROMPT.format(text=text)
-    result, _ = summarize_via_gemini(text="", prompt=prompt)
-    
-    if not result:
-        logger.error("Gemini failed to produce a profile.")
-        sys.exit(1)
-
-    clean_result = result.strip()
-    if "```yaml" in clean_result:
-        clean_result = clean_result.split("```yaml")[1].split("```")[0].strip()
-    elif "```" in clean_result:
-        clean_result = clean_result.split("```")[1].split("```")[0].strip()
-
-    try:
-        data = yaml.safe_load(clean_result)
-        if not isinstance(data, dict):
-            logger.error(f"LLM output is not a valid YAML dictionary: {clean_result}")
+    if args.format == "jsonl":
+        reports = []
+        logger.info(f"Executing bottom-up atomic pipeline for corpus: {args.source}")
+        with open(args.source, "r") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    entry = json.loads(line)
+                    post = entry.get("post")
+                    url = entry.get("url")
+                    if not post or not url:
+                        continue
+                    
+                    logger.info(f"Processing atomic delta for URL: {url}")
+                    # Fetch substantive sections (mocking full IMRAD fetch for now, using ingest)
+                    source_text, _ = ingest(url)
+                    if not source_text:
+                        continue
+                        
+                    statements = decompose_source(source_text)
+                    if not statements:
+                        continue
+                        
+                    delta = correlate_post_to_source(statements, post)
+                    if delta:
+                        reports.append(delta)
+                except Exception as e:
+                    logger.warning(f"Skipping malformed corpus entry: {e}")
+                    continue
+        
+        if not reports:
+            logger.error("No valid delta reports generated from corpus.")
             sys.exit(1)
-
+            
+        logger.info("Synthesizing cognitive architecture from atomic reports...")
+        synth_data = synthesize_deep_profile(reports)
+        if not synth_data:
+            logger.error("Failed to synthesize deep profile.")
+            sys.exit(1)
+        
+        # Merge profile and confidence into flat dict for YAML
+        data = synth_data.get("profile", {})
+        data["attribute_confidence"] = synth_data.get("confidence", {})
         if args.name:
             data["name"] = args.name
-            
-        name = data.get("name", args.source.stem)
-        output_path = args.output or DEFAULT_PERSONA_DIR / f"{name}.yaml"
-        output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(output_path, "w") as f:
-            yaml.dump(data, f, sort_keys=False)
-            
-        logger.info(f"Success! Deep Persona '{name}' saved to {output_path}")
-    except Exception as e:
-        logger.error(f"Error parsing or saving YAML: {e}")
-        sys.exit(1)
+    else:
+        # Legacy/Shallow single-pass synthesis
+        text = args.source.read_text()
+        logger.info("Analyzing deep style and intent via single-pass synthesis...")
+        prompt = SYNTHESIS_PROMPT.format(text=text)
+        result, _ = summarize_via_gemini(text="", prompt=prompt)
+        
+        if not result:
+            logger.error("Gemini failed to produce a profile.")
+            sys.exit(1)
+
+        clean_result = result.strip()
+        if "```yaml" in clean_result:
+            clean_result = clean_result.split("```yaml")[1].split("```")[0].strip()
+        elif "```" in clean_result:
+            clean_result = clean_result.split("```")[1].split("```")[0].strip()
+
+        try:
+            data = yaml.safe_load(clean_result)
+            if not isinstance(data, dict):
+                logger.error(f"LLM output is not a valid YAML dictionary.")
+                sys.exit(1)
+            if args.name:
+                data["name"] = args.name
+        except Exception as e:
+            logger.error(f"Error parsing YAML: {e}")
+            sys.exit(1)
+
+    # Save logic
+    name = data.get("name", args.source.stem)
+    output_path = args.output or DEFAULT_PERSONA_DIR / f"{name}.yaml"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(output_path, "w") as f:
+        yaml.dump(data, f, sort_keys=False)
+        
+    logger.info(f"Success! Deep Persona '{name}' saved to {output_path}")
+
 
 if __name__ == "__main__":
     main()
