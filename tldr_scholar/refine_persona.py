@@ -65,6 +65,21 @@ Create a "Worldview Extrapolation Case":
 Return only the probe text.
 """
 
+DOMAIN_GAP_DETECTION_PROMPT = """\
+Analyze the following persona profile for an AI writing assistant.
+Identify substantive "Gaps" where the persona's corpus is likely silent on 
+critical domain-specific debates or methodologies.
+
+Persona Role: {role}
+Current Stance Space: {stance_space}
+
+Compare this against a "Standard Expert Map" for this domain. 
+Provide a list of up to 3 "Missing Topics" (substantive gaps) that should be 
+probed to complete the persona's cognitive architecture.
+
+Return ONLY a YAML list of these missing topics.
+"""
+
 
 def deep_merge(base: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
     """Deep merge update into base dictionary."""
@@ -74,6 +89,38 @@ def deep_merge(base: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
         else:
             base[key] = value
     return base
+
+
+def detect_profile_gaps(data: dict[str, Any]) -> list[str]:
+    """Use LLM to detect substantive gaps in the persona profile."""
+    if summarize_via_gemini is None or not ACP_AVAILABLE:
+        return []
+    
+    role = data.get("role", "General Researcher")
+    stance_space = yaml.dump({
+        "agenda": data.get("agenda"),
+        "revelation_priorities": data.get("revelation_priorities"),
+        "suppression_rules": data.get("suppression_rules")
+    })
+    
+    prompt = DOMAIN_GAP_DETECTION_PROMPT.format(role=role, stance_space=stance_space)
+    result, _ = summarize_via_gemini(text="", prompt=prompt)
+    if not result:
+        return []
+        
+    clean_result = result.strip()
+    if "```yaml" in clean_result:
+        clean_result = clean_result.split("```yaml")[1].split("```")[0].strip()
+    elif "```" in clean_result:
+        clean_result = clean_result.split("```")[1].split("```")[0].strip()
+
+    try:
+        gaps = yaml.safe_load(clean_result)
+        if isinstance(gaps, list):
+            return [str(g) for g in gaps]
+        return []
+    except Exception:
+        return []
 
 
 def main():
@@ -106,13 +153,17 @@ def main():
     # Identify flags for refinement
     confidence = existing_data.get("attribute_confidence", {})
     flags = []
+    
+    # 1. Logical Ambiguities (Low Confidence)
     for attr, score in confidence.items():
         if score < 70:
             flags.append({"type": "ambiguity", "attr": attr, "score": score})
     
-    # Simple gap detection (mocked for now, requires domain baseline in real implementation)
-    if "revelation_priorities" not in existing_data or not existing_data["revelation_priorities"]:
-        flags.append({"type": "gap", "topic": "General Domain Debates", "domain": existing_data.get("role", "General")})
+    # 2. Substantive Gaps (Domain Boundary Comparison)
+    logger.info("Detecting substantive profile gaps via domain boundary comparison...")
+    gaps = detect_profile_gaps(existing_data)
+    for gap in gaps:
+        flags.append({"type": "gap", "topic": gap, "domain": existing_data.get("role", "General")})
 
     if not flags:
         logger.info("Profile is high-confidence. No gaps detected.")
@@ -125,7 +176,7 @@ def main():
         else:
             prompt = GAP_PROBE_PROMPT.format(topic=flag["topic"], domain=flag["domain"])
             
-        logger.info(f"[{i}/{len(flags)}] Generating probe case...")
+        logger.info(f"[{i}/{len(flags)}] Generating probe case for: {flag.get('attr') or flag.get('topic')}...")
         probe, _ = summarize_via_gemini(text="", prompt=prompt)
         if not probe:
             logger.warning("Gemini failed to generate a probe case.")
