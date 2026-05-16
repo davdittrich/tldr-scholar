@@ -206,6 +206,7 @@ def main():
         logger.error("gemini-acp not installed or available. Cannot perform analysis.")
         sys.exit(1)
 
+    data = {}
     if args.format == "jsonl":
         reports = []
         logger.info(f"Executing bottom-up atomic pipeline for corpus: {args.source}")
@@ -243,15 +244,15 @@ def main():
             
         logger.info("Synthesizing cognitive architecture from atomic reports...")
         synth_data = synthesize_deep_profile(reports)
-        if not synth_data:
+        if not synth_data or not isinstance(synth_data, dict):
             logger.error("Failed to synthesize deep profile.")
             sys.exit(1)
         
         # Merge profile and confidence into flat dict for YAML
         data = synth_data.get("profile", {})
+        if not isinstance(data, dict):
+            data = {}
         data["attribute_confidence"] = synth_data.get("confidence", {})
-        if args.name:
-            data["name"] = args.name
 
     else:
         # Legacy/Shallow single-pass synthesis
@@ -273,16 +274,17 @@ def main():
         try:
             data = yaml.safe_load(clean_result)
             if not isinstance(data, dict):
-                logger.error(f"LLM output is not a valid YAML dictionary.")
+                logger.error(f"LLM output is not a valid YAML dictionary: {clean_result}")
                 sys.exit(1)
-            if args.name:
-                data["name"] = args.name
         except Exception as e:
             logger.error(f"Error parsing YAML: {e}")
             sys.exit(1)
 
+    if args.name:
+        data["name"] = args.name
+
     # Save logic
-    name = data.get("name", args.source.stem)
+    name = data.get("name", args.source.stem) if isinstance(data, dict) else args.source.stem
     output_path = args.output or DEFAULT_PERSONA_DIR / f"{name}.yaml"
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
