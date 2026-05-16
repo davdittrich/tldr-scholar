@@ -53,6 +53,29 @@ Text:
 {text}
 """
 
+CORRELATION_PROMPT = """\
+Compare the following user social media post against a list of "Atomic Statements" 
+from the source material the user is sharing.
+
+Identify which statements were:
+- shared: Directly mentioned or summarized.
+- suppressed: Significant source claims the user ignored.
+- pivoted: Claims the user transformed or re-authored into their own worldview.
+
+For each statement, provide:
+- statement_id: The ID of the atomic statement.
+- status: shared, suppressed, or pivoted.
+- intent: Inferred local intent (why was this shared/suppressed/pivoted?).
+
+Return ONLY a YAML list of these correlation objects.
+
+Atomic Statements:
+{statements}
+
+User Post:
+{post_text}
+"""
+
 
 def decompose_source(text: str) -> list[dict]:
     """Decompose source text into atomic statements via LLM."""
@@ -60,6 +83,32 @@ def decompose_source(text: str) -> list[dict]:
         return []
 
     prompt = DECOMPOSITION_PROMPT.format(text=text)
+    result, _ = summarize_via_gemini(text="", prompt=prompt)
+    if not result:
+        return []
+
+    clean_result = result.strip()
+    if "```yaml" in clean_result:
+        clean_result = clean_result.split("```yaml")[1].split("```")[0].strip()
+    elif "```" in clean_result:
+        clean_result = clean_result.split("```")[1].split("```")[0].strip()
+
+    try:
+        data = yaml.safe_load(clean_result)
+        if isinstance(data, list):
+            return data
+        return []
+    except Exception:
+        return []
+
+
+def correlate_post_to_source(statements: list[dict], post_text: str) -> list[dict]:
+    """Map user post against atomic statements to find deltas."""
+    if summarize_via_gemini is None or not ACP_AVAILABLE:
+        return []
+
+    statements_yaml = yaml.dump(statements)
+    prompt = CORRELATION_PROMPT.format(statements=statements_yaml, post_text=post_text)
     result, _ = summarize_via_gemini(text="", prompt=prompt)
     if not result:
         return []
