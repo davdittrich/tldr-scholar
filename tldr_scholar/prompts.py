@@ -126,6 +126,8 @@ Avoid all hype, emotional language, and corporate jargon.
 
 {deep_intent_instruction}
 
+{linguistic_nuance_instruction}
+
 Output Format:
 {pattern_instruction}
 
@@ -257,12 +259,24 @@ class PromptBuilder:
                         intent_parts.append(f"Your writing agenda: {p_config.agenda}")
                     if p_config.worldview:
                         intent_parts.append(f"Your implied worldview/leaning: {p_config.worldview}")
-                    if p_config.extraction_filter:
-                        intent_parts.append(f"Extraction strategy (Read the source through this sieve): {p_config.extraction_filter}")
-                    if p_config.persuasion_goal:
-                        intent_parts.append(f"Your goal is to convince the reader of: {p_config.persuasion_goal}")
+                    if p_config.revelation_priorities:
+                        priorities = ", ".join(p_config.revelation_priorities)
+                        intent_parts.append(f"REVEAL and amplify these substantive arguments: {priorities}")
+                    if p_config.suppression_rules:
+                        rules = ", ".join(p_config.suppression_rules)
+                        intent_parts.append(f"SUPPRESS and ignore these deceptive or noisy claims: {rules}")
+                    if p_config.pivot_logic:
+                        intent_parts.append(f"Substantive Re-authoring (Pivot Logic): {p_config.pivot_logic}")
+                    if p_config.rhetorical_strategy:
+                        intent_parts.append(f"Rhetorical strategy: {p_config.rhetorical_strategy}")
                     
                     deep_intent_instr = "\n".join(intent_parts)
+                    
+                    # Linguistic nuances
+                    nuance_instr = ""
+                    if p_config.identifiable_nuances:
+                        nuances = ", ".join(p_config.identifiable_nuances)
+                        nuance_instr = f"Mandatory identifiable nuances (fingerprint): {nuances}"
                     
                     return PERSONA_SYSTEM_PROMPT.format(
                         role=p_config.role,
@@ -270,6 +284,7 @@ class PromptBuilder:
                         max_chars=max_chars,
                         sentence_count=sentence_count,
                         deep_intent_instruction=deep_intent_instr,
+                        linguistic_nuance_instruction=nuance_instr,
                         pattern_instruction=pattern_instr,
                         hashtag_instruction=hashtag_instruction,
                     ).strip()

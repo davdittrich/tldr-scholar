@@ -42,6 +42,35 @@ class TestPromptBuilder:
         assert "5 sentences" in prompt
         assert "500 characters" in prompt
 
+    def test_build_system_prompt_deep_intent(self, tmp_path):
+        persona_dir = tmp_path / "personas"
+        persona_dir.mkdir()
+        with open(persona_dir / "deep.yaml", "w") as f:
+            yaml.dump({
+                "name": "deep",
+                "role": "skeptic",
+                "tone": "analytical",
+                "structure_pattern": "stitched",
+                "agenda": "Expose capture",
+                "worldview": "Critical",
+                "revelation_priorities": ["funding", "p-values"]
+            }, f)
+            
+        builder = PromptBuilder()
+        builder._persona_manager.config_dir = persona_dir
+        builder._persona_manager.reload()
+        
+        long_text = "word " * 400
+        prompt = builder.build_system_prompt(
+            mode="scientific", max_chars=500, focus="", hashtag_instruction="",
+            persona="deep", text=long_text
+        )
+        
+        assert "Expose capture" in prompt
+        assert "Critical" in prompt
+        assert "REVEAL" in prompt
+        assert "funding" in prompt
+
     def test_build_system_prompt_bullet_pattern(self, tmp_path):
         persona_dir = tmp_path / "personas"
         persona_dir.mkdir()
