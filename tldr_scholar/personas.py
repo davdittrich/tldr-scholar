@@ -6,7 +6,10 @@ from pathlib import Path
 from typing import Any, Optional
 
 import yaml
+from loguru import logger
 from pydantic import BaseModel, Field
+
+from tldr_scholar.config import DEFAULT_PERSONA_DIR
 
 
 class Persona(BaseModel):
@@ -35,11 +38,7 @@ class PersonaManager:
     """Loads and manages personal style profiles from YAML files."""
 
     def __init__(self, config_dir: Path | None = None):
-        if config_dir is None:
-            self.config_dir = Path.home() / ".config" / "tldr-scholar" / "personas"
-        else:
-            self.config_dir = config_dir
-        
+        self.config_dir = config_dir or DEFAULT_PERSONA_DIR
         self._personas: dict[str, Persona] = {}
         self.reload()
 
@@ -47,6 +46,7 @@ class PersonaManager:
         """Scan config directory for persona YAML files."""
         self._personas = {}
         if not self.config_dir.exists():
+            logger.debug(f"Persona directory {self.config_dir} does not exist.")
             return
 
         for path in self.config_dir.glob("*.yaml"):
@@ -54,13 +54,14 @@ class PersonaManager:
                 with open(path, "r") as f:
                     data = yaml.safe_load(f)
                     if not isinstance(data, dict):
+                        logger.warning(f"Skipping invalid persona file (not a dict): {path}")
                         continue
                     # Use filename (minus extension) as persona name if not in YAML
                     name = data.get("name", path.stem)
                     data["name"] = name
                     self._personas[name] = Persona.model_validate(data)
-            except Exception:
-                # Skip invalid YAML files
+            except Exception as e:
+                logger.warning(f"Failed to load persona from {path}: {e}")
                 continue
 
     def get_persona(self, name: str) -> Persona | None:

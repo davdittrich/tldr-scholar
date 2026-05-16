@@ -5,6 +5,9 @@ import sys
 from pathlib import Path
 
 import yaml
+from loguru import logger
+
+from tldr_scholar.config import DEFAULT_PERSONA_DIR
 
 try:
     from gemini_acp import summarize_via_gemini, ACP_AVAILABLE
@@ -189,23 +192,23 @@ def main():
     args = parser.parse_args()
 
     if not args.source.exists():
-        print(f"Error: {args.source} not found")
+        logger.error(f"Source file {args.source} not found")
         sys.exit(1)
 
     text = args.source.read_text()
     
     if summarize_via_gemini is None or not ACP_AVAILABLE:
-        print("Error: gemini-acp not installed or available. Cannot perform analysis.")
+        logger.error("gemini-acp not installed or available. Cannot perform analysis.")
         sys.exit(1)
 
-    print("Analyzing deep style and intent via Gemini...")
+    logger.info("Analyzing deep style and intent via Gemini...")
     # For now, we use a single synthesis pass if no sources provided
     # Full atomic pipeline requires structured data (posts + linked sources)
     prompt = SYNTHESIS_PROMPT.format(text=text)
     result, _ = summarize_via_gemini(text="", prompt=prompt)
     
     if not result:
-        print("Error: Gemini failed to produce a profile.")
+        logger.error("Gemini failed to produce a profile.")
         sys.exit(1)
 
     clean_result = result.strip()
@@ -217,25 +220,22 @@ def main():
     try:
         data = yaml.safe_load(clean_result)
         if not isinstance(data, dict):
-            print("Error: LLM output is not a valid YAML dictionary.")
+            logger.error(f"LLM output is not a valid YAML dictionary: {clean_result}")
             sys.exit(1)
 
         if args.name:
             data["name"] = args.name
             
         name = data.get("name", args.source.stem)
-        output_path = args.output
-        if not output_path:
-            config_dir = Path.home() / ".config" / "tldr-scholar" / "personas"
-            config_dir.mkdir(parents=True, exist_ok=True)
-            output_path = config_dir / f"{name}.yaml"
+        output_path = args.output or DEFAULT_PERSONA_DIR / f"{name}.yaml"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
         with open(output_path, "w") as f:
             yaml.dump(data, f, sort_keys=False)
             
-        print(f"Success! Deep Persona '{name}' saved to {output_path}")
+        logger.info(f"Success! Deep Persona '{name}' saved to {output_path}")
     except Exception as e:
-        print(f"Error parsing or saving YAML: {e}")
+        logger.error(f"Error parsing or saving YAML: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":

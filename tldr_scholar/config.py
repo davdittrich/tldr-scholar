@@ -5,6 +5,9 @@ import tomllib
 from pathlib import Path
 from pydantic import BaseModel
 
+DEFAULT_CONFIG_DIR = Path.home() / ".config" / "tldr-scholar"
+DEFAULT_PERSONA_DIR = DEFAULT_CONFIG_DIR / "personas"
+
 
 class GeminiConfig(BaseModel):
     model: str = ""

@@ -5,6 +5,9 @@ import sys
 from pathlib import Path
 
 import yaml
+from loguru import logger
+
+from tldr_scholar.config import DEFAULT_PERSONA_DIR
 
 try:
     from gemini_acp import summarize_via_gemini, ACP_AVAILABLE
@@ -56,25 +59,24 @@ def main():
     parser.add_argument("name", help="Name of the persona to refine")
     args = parser.parse_args()
 
-    config_dir = Path.home() / ".config" / "tldr-scholar" / "personas"
-    persona_path = config_dir / f"{args.name}.yaml"
+    persona_path = DEFAULT_PERSONA_DIR / f"{args.name}.yaml"
 
     if not persona_path.exists():
-        print(f"Error: Persona '{args.name}' not found at {persona_path}")
+        logger.error(f"Persona '{args.name}' not found at {persona_path}")
         sys.exit(1)
 
     existing_yaml = persona_path.read_text()
     try:
         data = yaml.safe_load(existing_yaml)
-    except Exception:
-        print("Error: Invalid YAML profile.")
+    except Exception as e:
+        logger.error(f"Invalid YAML profile at {persona_path}: {e}")
         sys.exit(1)
 
     if summarize_via_gemini is None or not ACP_AVAILABLE:
-        print("Error: gemini-acp not installed.")
+        logger.error("gemini-acp not installed.")
         sys.exit(1)
 
-    print(f"Refining deep persona: {args.name}")
+    logger.info(f"Refining deep persona: {args.name}")
     print("-" * 40)
 
     # Identify flags for refinement
@@ -89,7 +91,7 @@ def main():
         flags.append({"type": "gap", "topic": "General Domain Debates", "domain": data.get("role", "General")})
 
     if not flags:
-        print("Profile is high-confidence. No gaps detected.")
+        logger.info("Profile is high-confidence. No gaps detected.")
         sys.exit(0)
 
     results = []
@@ -99,24 +101,32 @@ def main():
         else:
             prompt = GAP_PROBE_PROMPT.format(topic=flag["topic"], domain=flag["domain"])
             
-        print(f"\n[{i}/{len(flags)}] Generating probe case...")
+        logger.info(f"[{i}/{len(flags)}] Generating probe case...")
         probe, _ = summarize_via_gemini(text="", prompt=prompt)
+        if not probe:
+            logger.warning("Gemini failed to generate a probe case.")
+            continue
+            
         print("\n" + probe.strip())
         ans = input("\nYour Resolution > ").strip()
         if ans:
             results.append(f"Probe: {probe.strip()}\nUser Resolution: {ans}")
 
     if not results:
-        print("\nNo refinement provided. Exiting.")
+        logger.info("No refinement provided. Exiting.")
         sys.exit(0)
 
     # Final Synthesis
-    print("\nSynthesizing refined deep profile...")
+    logger.info("Synthesizing refined deep profile...")
     final_prompt = PROBING_PROMPT.format(
         existing_yaml=existing_yaml,
         probing_results="\n\n".join(results)
     )
     refined_yaml, _ = summarize_via_gemini(text="", prompt=final_prompt)
+
+    if not refined_yaml:
+        logger.error("Gemini failed to produce a refined profile.")
+        sys.exit(1)
 
     clean_result = refined_yaml.strip()
     if "```yaml" in clean_result:
@@ -126,11 +136,15 @@ def main():
 
     try:
         data = yaml.safe_load(clean_result)
+        if not isinstance(data, dict):
+            logger.error("LLM output is not a valid YAML dictionary.")
+            sys.exit(1)
+            
         with open(persona_path, "w") as f:
             yaml.dump(data, f, sort_keys=False)
-        print(f"\nSuccess! Deep persona '{args.name}' updated and refined.")
+        logger.info(f"Success! Deep persona '{args.name}' updated and refined.")
     except Exception as e:
-        print(f"Error parsing refined YAML: {e}")
+        logger.error(f"Error parsing refined YAML: {e}")
         sys.exit(1)
 
 
