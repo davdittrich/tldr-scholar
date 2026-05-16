@@ -35,32 +35,35 @@ Samples:
 {text}
 """
 
-def main():
-    parser = argparse.ArgumentParser(description="Synthesize deep writing style from samples.")
-    parser.add_argument("source", type=Path, help="File containing text samples")
-    parser.add_argument("--name", help="Override persona name")
-    parser.add_argument("--output", type=Path, help="Output YAML path")
-    args = parser.parse_args()
+DECOMPOSITION_PROMPT = """\
+Analyze the following substantive sections of a research paper or article 
+(Introduction, Discussion, Conclusion). 
 
-    if not args.source.exists():
-        print(f"Error: {args.source} not found")
-        sys.exit(1)
+Decompose the text into its constituent "Atomic Statements"—distinct claims, 
+empirical findings, or major conclusions.
 
-    text = args.source.read_text()
-    
+For each statement, provide:
+- id: A unique short ID (e.g., claim_1)
+- content: The substantive text of the claim.
+- section: Which section it originated from (introduction, discussion, conclusion).
+
+Return ONLY a YAML list of these objects.
+
+Text:
+{text}
+"""
+
+
+def decompose_source(text: str) -> list[dict]:
+    """Decompose source text into atomic statements via LLM."""
     if summarize_via_gemini is None or not ACP_AVAILABLE:
-        print("Error: gemini-acp not installed or available. Cannot perform analysis.")
-        sys.exit(1)
+        return []
 
-    prompt = SYNTHESIS_PROMPT.format(text=text)
-    print("Analyzing deep style and intent via Gemini...")
+    prompt = DECOMPOSITION_PROMPT.format(text=text)
     result, _ = summarize_via_gemini(text="", prompt=prompt)
-    
     if not result:
-        print("Error: Gemini failed to produce a profile.")
-        sys.exit(1)
+        return []
 
-    # Basic cleanup if model included triple backticks
     clean_result = result.strip()
     if "```yaml" in clean_result:
         clean_result = clean_result.split("```yaml")[1].split("```")[0].strip()
@@ -69,30 +72,16 @@ def main():
 
     try:
         data = yaml.safe_load(clean_result)
-        if not isinstance(data, dict):
-            print("Error: LLM output is not a valid YAML dictionary.")
-            print(f"Output received: {clean_result}")
-            sys.exit(1)
+        if isinstance(data, list):
+            return data
+        return []
+    except Exception:
+        return []
 
-        if args.name:
-            data["name"] = args.name
-            
-        name = data.get("name", args.source.stem)
-        output_path = args.output
-        if not output_path:
-            config_dir = Path.home() / ".config" / "tldr-scholar" / "personas"
-            config_dir.mkdir(parents=True, exist_ok=True)
-            output_path = config_dir / f"{name}.yaml"
 
-        with open(output_path, "w") as f:
-            yaml.dump(data, f, sort_keys=False)
-            
-        print(f"Success! Deep Persona '{name}' saved to {output_path}")
-    except Exception as e:
-        print(f"Error parsing or saving YAML: {e}")
-        print("Raw output from Gemini:")
-        print(clean_result)
-        sys.exit(1)
-
-if __name__ == "__main__":
-    main()
+def main():
+    parser = argparse.ArgumentParser(description="Synthesize deep writing style from samples.")
+    parser.add_argument("source", type=Path, help="File containing text samples")
+    parser.add_argument("--name", help="Override persona name")
+    parser.add_argument("--output", type=Path, help="Output YAML path")
+...
