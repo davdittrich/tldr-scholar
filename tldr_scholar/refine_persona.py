@@ -3,6 +3,7 @@
 import argparse
 import sys
 from pathlib import Path
+from typing import Any
 
 import yaml
 from loguru import logger
@@ -18,7 +19,7 @@ except ImportError:
 PROBING_PROMPT = """\
 You are an expert persona designer. You are helping a user refine their AI writing persona.
 Based on the existing profile and the user's answers to your probing cases, 
-provide an updated, more nuanced YAML profile.
+provide an updated, more nuanced writing style profile.
 
 Existing Profile:
 {existing_yaml}
@@ -26,7 +27,18 @@ Existing Profile:
 Probing Results:
 {probing_results}
 
-Return ONLY the updated YAML block with deep intent fields and confidence scores.
+Focus specifically on filling gaps in:
+- agenda
+- worldview
+- revelation_priorities
+- suppression_rules
+- pivot_logic
+- rhetorical_strategy
+- identifiable_nuances
+
+Update the confidence scores where the user's resolution provided higher certainty.
+
+Return ONLY the updated YAML block.
 """
 
 AMBIGUITY_RESOLVER_PROMPT = """\
@@ -54,6 +66,16 @@ Return only the probe text.
 """
 
 
+def deep_merge(base: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
+    """Deep merge update into base dictionary."""
+    for key, value in update.items():
+        if isinstance(value, dict) and key in base and isinstance(base[key], dict):
+            deep_merge(base[key], value)
+        else:
+            base[key] = value
+    return base
+
+
 def main():
     parser = argparse.ArgumentParser(description="Interactively refine a persona profile.")
     parser.add_argument("name", help="Name of the persona to refine")
@@ -65,9 +87,11 @@ def main():
         logger.error(f"Persona '{args.name}' not found at {persona_path}")
         sys.exit(1)
 
-    existing_yaml = persona_path.read_text()
+    existing_text = persona_path.read_text()
     try:
-        data = yaml.safe_load(existing_yaml)
+        existing_data = yaml.safe_load(existing_text)
+        if not isinstance(existing_data, dict):
+            raise ValueError("Persona YAML is not a dictionary")
     except Exception as e:
         logger.error(f"Invalid YAML profile at {persona_path}: {e}")
         sys.exit(1)
@@ -80,15 +104,15 @@ def main():
     print("-" * 40)
 
     # Identify flags for refinement
-    confidence = data.get("attribute_confidence", {})
+    confidence = existing_data.get("attribute_confidence", {})
     flags = []
     for attr, score in confidence.items():
         if score < 70:
             flags.append({"type": "ambiguity", "attr": attr, "score": score})
     
     # Simple gap detection (mocked for now, requires domain baseline in real implementation)
-    if "revelation_priorities" not in data or not data["revelation_priorities"]:
-        flags.append({"type": "gap", "topic": "General Domain Debates", "domain": data.get("role", "General")})
+    if "revelation_priorities" not in existing_data or not existing_data["revelation_priorities"]:
+        flags.append({"type": "gap", "topic": "General Domain Debates", "domain": existing_data.get("role", "General")})
 
     if not flags:
         logger.info("Profile is high-confidence. No gaps detected.")
@@ -119,29 +143,32 @@ def main():
     # Final Synthesis
     logger.info("Synthesizing refined deep profile...")
     final_prompt = PROBING_PROMPT.format(
-        existing_yaml=existing_yaml,
+        existing_yaml=existing_text,
         probing_results="\n\n".join(results)
     )
-    refined_yaml, _ = summarize_via_gemini(text="", prompt=final_prompt)
+    refined_yaml_text, _ = summarize_via_gemini(text="", prompt=final_prompt)
 
-    if not refined_yaml:
+    if not refined_yaml_text:
         logger.error("Gemini failed to produce a refined profile.")
         sys.exit(1)
 
-    clean_result = refined_yaml.strip()
+    clean_result = refined_yaml_text.strip()
     if "```yaml" in clean_result:
         clean_result = clean_result.split("```yaml")[1].split("```")[0].strip()
     elif "```" in clean_result:
         clean_result = clean_result.split("```")[1].split("```")[0].strip()
 
     try:
-        data = yaml.safe_load(clean_result)
-        if not isinstance(data, dict):
+        new_data = yaml.safe_load(clean_result)
+        if not isinstance(new_data, dict):
             logger.error("LLM output is not a valid YAML dictionary.")
             sys.exit(1)
             
+        # Perform deep merge to prevent data loss of fields LLM might omit
+        updated_data = deep_merge(existing_data, new_data)
+            
         with open(persona_path, "w") as f:
-            yaml.dump(data, f, sort_keys=False)
+            yaml.dump(updated_data, f, sort_keys=False)
         logger.info(f"Success! Deep persona '{args.name}' updated and refined.")
     except Exception as e:
         logger.error(f"Error parsing refined YAML: {e}")
