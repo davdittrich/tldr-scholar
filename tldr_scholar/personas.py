@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Persona(BaseModel):
@@ -17,11 +17,18 @@ class Persona(BaseModel):
     structure_pattern: str
     hashtag_style: str = "lowercase"  # "lowercase" or "pascal"
     
-    # Deep Persona Fields
+    # Cognitive Architecture (Deep Persona)
     agenda: Optional[str] = None
     worldview: Optional[str] = None
-    extraction_filter: Optional[str] = None
-    persuasion_goal: Optional[str] = None
+    revelation_priorities: list[str] = Field(default_factory=list)
+    suppression_rules: list[str] = Field(default_factory=list)
+    substantive_anchors: list[str] = Field(default_factory=list)
+    pivot_logic: Optional[str] = None
+    rhetorical_strategy: Optional[str] = None
+    identifiable_nuances: list[str] = Field(default_factory=list)
+    
+    # Quantified Confidence (0-100)
+    attribute_confidence: dict[str, int] = Field(default_factory=dict)
 
 
 class PersonaManager:

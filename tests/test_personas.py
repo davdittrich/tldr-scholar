@@ -16,7 +16,10 @@ def test_persona_manager_loading(tmp_path):
         "role": "academic economist",
         "tone": "analytical",
         "structure_pattern": "stitched quotes",
-        "hashtag_style": "pascal"
+        "hashtag_style": "pascal",
+        "revelation_priorities": ["empirical findings"],
+        "suppression_rules": ["noise"],
+        "attribute_confidence": {"role": 100, "revelation_priorities": 90}
     }
     with open(persona_dir / "davdittrich.yaml", "w") as f:
         yaml.dump(dav_data, f)
@@ -27,6 +30,8 @@ def test_persona_manager_loading(tmp_path):
     p = manager.get_persona("davdittrich")
     assert p.role == "academic economist"
     assert p.hashtag_style == "pascal"
+    assert p.revelation_priorities == ["empirical findings"]
+    assert p.attribute_confidence["role"] == 100
 
 def test_persona_manager_empty_dir(tmp_path):
     manager = PersonaManager(config_dir=tmp_path / "nonexistent")
