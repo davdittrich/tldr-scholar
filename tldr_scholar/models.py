@@ -2,24 +2,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel
 
-
-class AudienceEnum(str, Enum):
-    """Audience persona for the summary."""
-    EXPERT = "expert"
-    LAYMAN = "layman"
-    STUDENT = "student"
-
-
-class ToneEnum(str, Enum):
-    """Tone of the summary."""
-    PROFESSIONAL = "professional"
-    CASUAL = "casual"
-    ANALYTICAL = "analytical"
+from tldr_scholar.types import AudienceEnum, ToneEnum
 
 
 class SummaryRequest(BaseModel):

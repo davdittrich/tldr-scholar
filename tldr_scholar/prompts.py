@@ -4,8 +4,10 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
+from tldr_scholar.types import AudienceEnum, ToneEnum
+
 if TYPE_CHECKING:
-    from tldr_scholar.models import AudienceEnum, ToneEnum
+    pass
 
 # Sentence counts by length preset
 SENTENCE_COUNTS = {"short": 3, "medium": 5, "long": 7}
@@ -170,7 +172,6 @@ class PromptBuilder:
 
     def _get_audience_instruction(self, audience: AudienceEnum) -> str:
         """Get instructions for the specific audience persona."""
-        from tldr_scholar.models import AudienceEnum
         if audience == AudienceEnum.EXPERT:
             return (
                 "Write in plain, simple language but use precise technical terminology. "
@@ -193,7 +194,6 @@ class PromptBuilder:
 
     def _get_tone_instruction(self, tone: ToneEnum) -> str:
         """Get instructions for the specific tone."""
-        from tldr_scholar.models import ToneEnum
         if tone == ToneEnum.CASUAL:
             return "Use a conversational and approachable tone."
         elif tone == ToneEnum.ANALYTICAL:
@@ -204,8 +204,6 @@ class PromptBuilder:
 
     def _get_scientific_structure(self, sentence_count: int, audience: AudienceEnum) -> str:
         """Get the IMRAD structure instructions based on audience and length."""
-        from tldr_scholar.models import AudienceEnum
-        
         # Determine persona key
         if audience == AudienceEnum.LAYMAN:
             persona = "layman"
@@ -229,8 +227,6 @@ class PromptBuilder:
         metadata: dict | None = None,
     ) -> str:
         """Build the system prompt for the given mode and audience."""
-        from tldr_scholar.models import AudienceEnum, ToneEnum
-        
         # Set defaults if not provided
         if audience is None:
             audience = AudienceEnum.EXPERT
