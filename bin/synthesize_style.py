@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Utility to synthesize a writing style persona from text samples."""
+"""Utility to synthesize a deep writing style persona from text samples."""
 import argparse
 import sys
 from pathlib import Path
@@ -13,13 +13,21 @@ except ImportError:
     ACP_AVAILABLE = False
 
 SYNTHESIS_PROMPT = """\
-Analyze the writing style of the following text samples. 
-Provide a concise writing style profile in YAML format with the following fields:
+Analyze the writing style AND underlying intent of the following text samples. 
+Provide a detailed writing style profile in YAML format with the following fields:
+
 - name: A short identifier (lowercase, no spaces)
 - role: A brief description of the persona (e.g., "Academic Economist")
 - tone: 2-3 adjectives describing the voice (e.g., "analytical, objective")
-- structure_pattern: Instructions for sentence structure and formatting
+- structure_pattern: "stitched" or "bullet_points"
 - hashtag_style: "lowercase" or "pascal"
+
+# Deep Intent Fields (Crucial)
+- agenda: What is the primary purpose or "mission" of this author's writing?
+- worldview: What is the author's implied philosophical or political leaning?
+- extraction_filter: What specific types of information does this author prioritize 
+  (e.g., p-values, funding sources, power dynamics) and what do they explicitly ignore?
+- persuasion_goal: What is the author trying to convince their readers of in the long run?
 
 Return ONLY the YAML block.
 
@@ -28,7 +36,7 @@ Samples:
 """
 
 def main():
-    parser = argparse.ArgumentParser(description="Synthesize writing style from samples.")
+    parser = argparse.ArgumentParser(description="Synthesize deep writing style from samples.")
     parser.add_argument("source", type=Path, help="File containing text samples")
     parser.add_argument("--name", help="Override persona name")
     parser.add_argument("--output", type=Path, help="Output YAML path")
@@ -45,7 +53,7 @@ def main():
         sys.exit(1)
 
     prompt = SYNTHESIS_PROMPT.format(text=text)
-    print("Analyzing style via Gemini...")
+    print("Analyzing deep style and intent via Gemini...")
     result, _ = summarize_via_gemini(text="", prompt=prompt)
     
     if not result:
@@ -79,7 +87,7 @@ def main():
         with open(output_path, "w") as f:
             yaml.dump(data, f, sort_keys=False)
             
-        print(f"Success! Persona '{name}' saved to {output_path}")
+        print(f"Success! Deep Persona '{name}' saved to {output_path}")
     except Exception as e:
         print(f"Error parsing or saving YAML: {e}")
         print("Raw output from Gemini:")

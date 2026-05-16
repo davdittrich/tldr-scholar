@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import yaml
 from pydantic import BaseModel
@@ -16,6 +16,12 @@ class Persona(BaseModel):
     tone: str
     structure_pattern: str
     hashtag_style: str = "lowercase"  # "lowercase" or "pascal"
+    
+    # Deep Persona Fields
+    agenda: Optional[str] = None
+    worldview: Optional[str] = None
+    extraction_filter: Optional[str] = None
+    persuasion_goal: Optional[str] = None
 
 
 class PersonaManager:
