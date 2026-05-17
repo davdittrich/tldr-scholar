@@ -40,11 +40,12 @@ class PersonaManager:
     def __init__(self, config_dir: Path | None = None):
         self.config_dir = config_dir or DEFAULT_PERSONA_DIR
         self._personas: dict[str, Persona] = {}
-        self.reload()
+        self._loaded = False
 
     def reload(self) -> None:
         """Scan config directory for persona YAML files."""
         self._personas = {}
+        self._loaded = True
         if not self.config_dir.exists():
             logger.debug(f"Persona directory {self.config_dir} does not exist.")
             return
@@ -64,10 +65,16 @@ class PersonaManager:
                 logger.warning(f"Failed to load persona from {path}: {e}")
                 continue
 
+    def _ensure_loaded(self) -> None:
+        if not self._loaded:
+            self.reload()
+
     def get_persona(self, name: str) -> Persona | None:
         """Get a persona by name."""
+        self._ensure_loaded()
         return self._personas.get(name)
 
     def list_personas(self) -> list[str]:
         """Return list of available persona names."""
+        self._ensure_loaded()
         return sorted(list(self._personas.keys()))
