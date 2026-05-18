@@ -97,7 +97,12 @@ class CorpusCache:
         p = self._path(stage, self._key_hash(stage, key_dict))
         if not p.exists():
             return None
-        return json.loads(p.read_text())
+        try:
+            return json.loads(p.read_text())
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.warning(f"CorpusCache corrupt stage-cache file: {p.name}; deleting")
+            p.unlink(missing_ok=True)
+            return None
 
     def _stage_put(self, stage: str, key_dict: dict[str, Any], value: Any) -> None:
         p = self._path(stage, self._key_hash(stage, key_dict))

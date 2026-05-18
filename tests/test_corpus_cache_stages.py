@@ -282,3 +282,21 @@ def test_resume_from_incomplete_with_stale_aggregate_cleared():
         assert cache.get("cluster", key) is not None, "cluster preserved"
         assert cache.get("correlate", key) is not None, "correlate preserved"
         assert cache.get("aggregate", key) is None, "stale aggregate wiped"
+
+
+def test_stage_get_handles_corrupt_cache_file():
+    """Corrupt stage cache file → treated as miss, file deleted."""
+    with tempfile.TemporaryDirectory() as tmp:
+        cache = CorpusCache(root=Path(tmp))
+        key = _make_key()
+        cache.put("cluster", key, {"data": "ok"})
+
+        # Find and corrupt the cache file
+        cache_files = list((Path(tmp) / "cluster").glob("*.json"))
+        assert len(cache_files) == 1
+        cache_files[0].write_text("{not valid json")
+
+        # Read should return None, not raise
+        assert cache.get("cluster", key) is None
+        # Corrupt file should be cleaned up
+        assert not cache_files[0].exists()
