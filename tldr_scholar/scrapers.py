@@ -45,7 +45,7 @@ class MastodonScraper:
                     continue
                 resp.raise_for_status()
                 return resp
-            except Exception as e:
+            except (httpx.HTTPError, httpx.TimeoutException) as e:
                 if i == retries - 1:
                     raise
                 await asyncio.sleep(1)
@@ -72,7 +72,7 @@ class MastodonScraper:
         try:
             resp = await self._get_with_retry(lookup_url)
             return resp.json().get("id")
-        except Exception as e:
+        except (httpx.HTTPError, KeyError, ValueError) as e:
             logger.error(f"Account lookup failed: {e}")
             return None
 
@@ -159,7 +159,7 @@ class BlueskyScraper:
                 resp = await self.client.get(fetch_url, timeout=15)
                 resp.raise_for_status()
                 data = resp.json()
-            except Exception as e:
+            except (httpx.HTTPError, ValueError) as e:
                 logger.error(f"Bluesky API fetch failed: {e}")
                 break
                 

@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import asyncio
-from urllib.parse import urlparse
-from typing import Optional
-
-from loguru import logger
 import hashlib
 from pathlib import Path
+from typing import Optional
+from urllib.parse import urlparse
+
+import httpx
+from loguru import logger
 
 from tldr_scholar.ingest import ingest
 from tldr_scholar.scrapers import SocialPost
@@ -68,7 +69,7 @@ class LinkIngester:
                 if text:
                     cache_path.write_text(text)
                     return text
-            except Exception as e:
+            except (httpx.HTTPError, ValueError, IOError) as e:
                 logger.warning(f"Failed to ingest {url}: {e}")
                 
         return None
