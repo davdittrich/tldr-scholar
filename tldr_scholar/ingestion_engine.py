@@ -53,7 +53,7 @@ class LinkIngester:
         if not self.is_substantive(url):
             return None
             
-        url_hash = hashlib.md5(url.encode()).hexdigest()
+        url_hash = hashlib.md5(url.encode(), usedforsecurity=False).hexdigest()
         cache_path = self.cache_dir / f"{url_hash}.txt"
         
         if cache_path.exists():
