@@ -76,16 +76,19 @@ class LinkIngester:
 
     async def process_posts(self, posts: list[SocialPost]) -> list[tuple[SocialPost, Optional[str]]]:
         """Parallel process all links in a list of posts."""
-        tasks = []
-        for post in posts:
+        tasks: list = []
+        task_post_idx: list[int] = []
+        for idx, post in enumerate(posts):
             # For now, we only take the FIRST substantive link per post
             link = next((l for l in post.links if self.is_substantive(l)), None)
             if link:
                 tasks.append(self.fetch_article(link))
-            else:
-                tasks.append(asyncio.sleep(0, result=None))
-                
-        results = await asyncio.gather(*tasks)
+                task_post_idx.append(idx)
+
+        fetched = await asyncio.gather(*tasks) if tasks else []
+        results: list[Optional[str]] = [None] * len(posts)
+        for i, body in zip(task_post_idx, fetched):
+            results[i] = body
         success = len([r for r in results if r])
         logger.info(f"Ingestion complete: {success} success, {len(results)-success} skipped/failed")
         return list(zip(posts, results))
