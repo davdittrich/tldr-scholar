@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional, Protocol
+from typing import Any, Optional, Protocol, runtime_checkable
 from urllib.parse import urlparse
 
 import httpx
@@ -22,6 +22,7 @@ class SocialPost(BaseModel):
     engagement: int = 0 # sum of likes, boosts, etc.
 
 
+@runtime_checkable
 class BaseScraper(Protocol):
     """Interface for social media scrapers."""
     async def scrape(self, url: str, limit_months: int = 12, max_posts: int = 1000) -> list[SocialPost]:

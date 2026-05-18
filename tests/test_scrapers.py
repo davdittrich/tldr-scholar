@@ -31,3 +31,11 @@ def test_is_substantive_rejects_unknown_domain():
         assert ingester.is_substantive("https://example.edu/paper") is True
         # Social loop excluded
         assert ingester.is_substantive("https://mastodon.example/@user") is False
+
+
+def test_scrapers_conform_to_base_protocol():
+    from tldr_scholar.scrapers import BaseScraper, MastodonScraper, BlueskyScraper
+    m = MastodonScraper(client=None)  # type: ignore[arg-type]
+    b = BlueskyScraper(client=None)  # type: ignore[arg-type]
+    assert isinstance(m, BaseScraper)
+    assert isinstance(b, BaseScraper)
