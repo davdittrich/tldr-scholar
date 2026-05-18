@@ -3,13 +3,17 @@ from __future__ import annotations
 
 import textwrap
 from unittest.mock import patch, MagicMock
+
+import pytest
+
 from tldr_scholar.synthesize_style import (
     synthesize_deep_profile,
     decompose_source,
     correlate_post_to_source
 )
 
-def test_decompose_source_extracts_claims():
+@pytest.mark.asyncio
+async def test_decompose_source_extracts_claims():
     text = "The study found that A causes B. However, C had no effect."
     mock_yaml = textwrap.dedent("""
     - id: c1
@@ -19,16 +23,17 @@ def test_decompose_source_extracts_claims():
       claim: C had no effect
       type: null_result
     """).strip()
-    
+
     with patch("tldr_scholar.synthesize_style.summarize_via_gemini", return_value=(mock_yaml, None)), \
          patch("tldr_scholar.synthesize_style.ACP_AVAILABLE", True):
-        result = decompose_source(text)
-        
+        result = await decompose_source(text)
+
     assert len(result) == 2
     assert result[0]["id"] == "c1"
     assert "A causes B" in result[0]["claim"]
 
-def test_correlate_post_to_source_finds_deltas():
+@pytest.mark.asyncio
+async def test_correlate_post_to_source_finds_deltas():
     statements = [{"id": "c1", "claim": "A causes B"}]
     post_text = "I saw that A leads to B!"
     mock_yaml = textwrap.dedent("""
@@ -36,15 +41,16 @@ def test_correlate_post_to_source_finds_deltas():
       status: shared
       intent: Direct revelation
     """).strip()
-    
+
     with patch("tldr_scholar.synthesize_style.summarize_via_gemini", return_value=(mock_yaml, None)), \
          patch("tldr_scholar.synthesize_style.ACP_AVAILABLE", True):
-        result = correlate_post_to_source(statements, post_text)
-        
+        result = await correlate_post_to_source(statements, post_text)
+
     assert len(result) == 1
     assert result[0]["status"] == "shared"
 
-def test_synthesize_deep_profile():
+@pytest.mark.asyncio
+async def test_synthesize_deep_profile():
     correlation_reports = [
         [
             {"statement_id": "c1", "status": "shared", "intent": "Important data"},
@@ -71,7 +77,7 @@ def test_synthesize_deep_profile():
     
     with patch("tldr_scholar.synthesize_style.summarize_via_gemini", return_value=(mock_yaml, None)), \
          patch("tldr_scholar.synthesize_style.ACP_AVAILABLE", True):
-        result = synthesize_deep_profile(correlation_reports)
+        result = await synthesize_deep_profile(correlation_reports)
         
     assert "profile" in result
     assert "confidence" in result
