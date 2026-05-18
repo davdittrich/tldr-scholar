@@ -336,7 +336,12 @@ async def run_synthesis(args):
                 )
                 topics[tlabel] = tp
                 topic_ok.append(ok)
-        except Exception:  # stage boundary: LLM API exhaustion
+        except Exception as exc:  # stage boundary: LLM API exhaustion
+            # Re-raise programming errors so bugs surface immediately instead of
+            # being mis-labelled as llm_exhausted (tldr-scholar-58f.4).
+            if isinstance(exc, (ImportError, AttributeError, TypeError, NameError,
+                                KeyError, AssertionError)):
+                raise
             incomplete_stages.append("aggregate_topic")
             partial = Persona(
                 name=persona_name,
@@ -375,7 +380,12 @@ async def run_synthesis(args):
         # Global synthesis
         try:
             global_fields = await aggregate_global(final_reports, caller)
-        except Exception:  # stage boundary: LLM API exhaustion
+        except Exception as exc:  # stage boundary: LLM API exhaustion
+            # Re-raise programming errors so bugs surface immediately instead of
+            # being mis-labelled as llm_exhausted (tldr-scholar-58f.4).
+            if isinstance(exc, (ImportError, AttributeError, TypeError, NameError,
+                                KeyError, AssertionError)):
+                raise
             incomplete_stages.append("aggregate_global")
             partial = Persona(
                 name=persona_name,

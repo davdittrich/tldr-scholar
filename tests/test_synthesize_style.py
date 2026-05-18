@@ -321,3 +321,222 @@ class TestPersonaStatusOnTopicFailure:
 
             assert data["status"] == "complete"
             assert data.get("incomplete_stages", []) == []
+
+
+# ---------------------------------------------------------------------------
+# B4 regression: broad except Exception at LLM-stage boundaries mis-labels
+# programming bugs as llm_exhausted (tldr-scholar-58f.4)
+# ---------------------------------------------------------------------------
+
+
+def _make_run_synthesis_patches(tmpdir: Path, *, aggregate_topic_side_effect=None, aggregate_global_side_effect=None):
+    """Return a list of patch context managers that stub all I/O so run_synthesis
+    reaches the aggregate stage without network calls.
+
+    The mock corpus has one post in topic "_global" so aggregate_topic is
+    always called exactly once.
+    """
+    from tldr_scholar.personas import TopicProfile
+    from tldr_scholar.source_baseline import SourceBaselines
+
+    mock_post = MagicMock()
+    mock_post.text = "test post body"
+    mock_post.source_url = "https://example.com/post/1"
+
+    # build_corpus result shape: training=[post], labels=["_global"], centroids={}
+    corpus_result = {
+        "training": [mock_post],
+        "training_topic_labels": ["_global"],
+        "topic_centroids": {},
+        "eval_judge": {},
+        "eval_manual": {},
+    }
+
+    ok_topic_profile = TopicProfile(
+        label="_global",
+        centroid=[],
+        sample_size=1,
+        posts=["test post body"],
+    )
+
+    # Cache always misses so we never short-circuit the aggregate blocks.
+    mock_cache = MagicMock()
+    mock_cache.get.return_value = None
+    mock_cache.put.return_value = None
+
+    mock_scraper = MagicMock()
+    mock_scraper.scrape = AsyncMock(return_value=[mock_post])
+
+    mock_baselines = SourceBaselines(
+        claims="claim", extractive_summary=None, abstractive_summary=None
+    )
+
+    aggregate_topic_mock = AsyncMock(
+        side_effect=aggregate_topic_side_effect,
+        return_value=(ok_topic_profile, True),
+    )
+    aggregate_global_mock = AsyncMock(
+        side_effect=aggregate_global_side_effect,
+        return_value={"agenda": "a", "worldview": "w"},
+    )
+
+    return [
+        patch("tldr_scholar.synthesize_style.ACP_AVAILABLE", True),
+        patch("tldr_scholar.synthesize_style.check_embedding_model_cached"),
+        patch("tldr_scholar.synthesize_style.CorpusCache", return_value=mock_cache),
+        patch("tldr_scholar.synthesize_style.ScraperFactory.get_scraper",
+              return_value=mock_scraper),
+        patch("tldr_scholar.synthesize_style.build_corpus",
+              new=AsyncMock(return_value=corpus_result)),
+        patch("tldr_scholar.synthesize_style._llm_caller", return_value=MagicMock()),
+        patch("tldr_scholar.synthesize_style.build_baselines",
+              new=AsyncMock(return_value=mock_baselines)),
+        patch("tldr_scholar.synthesize_style.correlate_against_baselines",
+              new=AsyncMock(return_value=[])),
+        patch("tldr_scholar.synthesize_style.aggregate_topic", aggregate_topic_mock),
+        patch("tldr_scholar.synthesize_style.aggregate_global", aggregate_global_mock),
+        patch("tldr_scholar.synthesize_style.DEFAULT_PERSONA_DIR", tmpdir),
+        patch("tldr_scholar.synthesize_style.write_persona_yaml"),
+        patch("tldr_scholar.synthesize_style.emit_drop_summary"),
+    ]
+
+
+def _make_args(tmpdir: Path):
+    import argparse
+    return argparse.Namespace(
+        source="https://mastodon.social/@testuser",
+        name="test_persona",
+        months=1,
+        max_posts=10,
+        window_months=1,
+        n_train=10,
+        n_judge_per_topic=2,
+        n_manual_per_topic=1,
+        concurrency=1,
+        skip_links=True,
+        full_baselines=False,
+        reset=None,
+        min_cluster=2,
+    )
+
+
+class TestStageBoundaryExceptionNarrowing:
+    """B4 regression: programming-bug exceptions must not be swallowed as
+    llm_exhausted at aggregate_topic / aggregate_global stage boundaries."""
+
+    @pytest.mark.asyncio
+    async def test_aggregate_topic_propagates_programming_errors(self):
+        """ImportError raised inside aggregate_topic must propagate out of
+        run_synthesis, NOT be caught and re-emitted as llm_exhausted (exit 4)."""
+        from tldr_scholar.synthesize_style import run_synthesis
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            args = _make_args(tmp_path)
+            patches = _make_run_synthesis_patches(
+                tmp_path,
+                aggregate_topic_side_effect=ImportError("missing module"),
+            )
+            with pytest.raises(ImportError, match="missing module"):
+                with patch("tldr_scholar.synthesize_style.emit_envelope"):
+                    ctx = patches[0]
+                    for p in patches:
+                        p.start()
+                    try:
+                        await run_synthesis(args)
+                    finally:
+                        for p in patches:
+                            p.stop()
+
+    @pytest.mark.asyncio
+    async def test_aggregate_global_propagates_programming_errors(self):
+        """AttributeError raised inside aggregate_global must propagate out of
+        run_synthesis, NOT be caught and re-emitted as llm_exhausted (exit 4)."""
+        from tldr_scholar.synthesize_style import run_synthesis
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            args = _make_args(tmp_path)
+            patches = _make_run_synthesis_patches(
+                tmp_path,
+                aggregate_global_side_effect=AttributeError("bad attr"),
+            )
+            with pytest.raises(AttributeError, match="bad attr"):
+                with patch("tldr_scholar.synthesize_style.emit_envelope"):
+                    for p in patches:
+                        p.start()
+                    try:
+                        await run_synthesis(args)
+                    finally:
+                        for p in patches:
+                            p.stop()
+
+    @pytest.mark.asyncio
+    async def test_aggregate_topic_catches_runtime_error_as_llm_exhausted(self):
+        """RuntimeError (non-programming-bug) from aggregate_topic must still be
+        caught, emit llm_exhausted envelope, and exit 4 (existing behaviour preserved)."""
+        from tldr_scholar.synthesize_style import run_synthesis
+
+        emitted: list[dict] = []
+
+        def capture_emit(level, stage, code, message, drops=None):
+            emitted.append({"level": level, "stage": stage, "code": code})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            args = _make_args(tmp_path)
+            patches = _make_run_synthesis_patches(
+                tmp_path,
+                aggregate_topic_side_effect=RuntimeError("api timeout"),
+            )
+            with pytest.raises(SystemExit) as exc_info:
+                with patch("tldr_scholar.synthesize_style.emit_envelope",
+                           side_effect=capture_emit):
+                    for p in patches:
+                        p.start()
+                    try:
+                        await run_synthesis(args)
+                    finally:
+                        for p in patches:
+                            p.stop()
+
+            assert exc_info.value.code == 4, (
+                f"Expected exit code 4 (llm_exhausted), got {exc_info.value.code}"
+            )
+            assert any(e["code"] == "llm_exhausted" and e["stage"] == "aggregate_topic"
+                       for e in emitted), f"llm_exhausted envelope not emitted; got {emitted}"
+
+    @pytest.mark.asyncio
+    async def test_aggregate_global_catches_runtime_error_as_llm_exhausted(self):
+        """RuntimeError (non-programming-bug) from aggregate_global must still be
+        caught, emit llm_exhausted envelope, and exit 4 (existing behaviour preserved)."""
+        from tldr_scholar.synthesize_style import run_synthesis
+
+        emitted: list[dict] = []
+
+        def capture_emit(level, stage, code, message, drops=None):
+            emitted.append({"level": level, "stage": stage, "code": code})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            args = _make_args(tmp_path)
+            patches = _make_run_synthesis_patches(
+                tmp_path,
+                aggregate_global_side_effect=RuntimeError("api timeout"),
+            )
+            with pytest.raises(SystemExit) as exc_info:
+                with patch("tldr_scholar.synthesize_style.emit_envelope",
+                           side_effect=capture_emit):
+                    for p in patches:
+                        p.start()
+                    try:
+                        await run_synthesis(args)
+                    finally:
+                        for p in patches:
+                            p.stop()
+
+            assert exc_info.value.code == 4, (
+                f"Expected exit code 4 (llm_exhausted), got {exc_info.value.code}"
+            )
+            assert any(e["code"] == "llm_exhausted" and e["stage"] == "aggregate_global"
+                       for e in emitted), f"llm_exhausted envelope not emitted; got {emitted}"
