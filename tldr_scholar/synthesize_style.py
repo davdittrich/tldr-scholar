@@ -385,7 +385,7 @@ async def run_synthesis(args):
 
         # Global synthesis
         try:
-            global_fields = await aggregate_global(final_reports, caller)
+            global_fields, global_ok = await aggregate_global(final_reports, caller)
         except Exception as exc:  # stage boundary: LLM API exhaustion
             # Re-raise programming errors so bugs surface immediately instead of
             # being mis-labelled as llm_exhausted (tldr-scholar-58f.4).
@@ -409,6 +409,10 @@ async def run_synthesis(args):
             )
             emit_drop_summary()
             sys.exit(EXIT_CODES["llm_exhausted"])
+
+        # aggregate_global returns (dict, success); signal failure if parse failed
+        if not global_ok:
+            incomplete_stages.append("aggregate_global_failed")
 
         try:
             cache.put("aggregate", _agg_key, {

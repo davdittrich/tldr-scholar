@@ -313,29 +313,33 @@ class TestAggregateGlobal:
     @pytest.mark.asyncio
     async def test_returns_required_keys(self):
         llm_mock = AsyncMock(return_value=_valid_global_yaml())
-        result = await aggregate_global([_make_delta()], llm_mock)
-        assert set(result.keys()) >= {"agenda", "worldview", "pivot_logic", "identifiable_nuances"}
+        fields, ok = await aggregate_global([_make_delta()], llm_mock)
+        assert ok is True
+        assert set(fields.keys()) >= {"agenda", "worldview", "pivot_logic", "identifiable_nuances"}
 
     @pytest.mark.asyncio
     async def test_returns_correct_values(self):
         llm_mock = AsyncMock(return_value=_valid_global_yaml())
-        result = await aggregate_global([_make_delta()], llm_mock)
-        assert result["agenda"] == "Promote open-source AI adoption."
-        assert result["worldview"] == "Techno-optimist."
-        assert "heavy use of passive voice" in result["identifiable_nuances"]
+        fields, ok = await aggregate_global([_make_delta()], llm_mock)
+        assert ok is True
+        assert fields["agenda"] == "Promote open-source AI adoption."
+        assert fields["worldview"] == "Techno-optimist."
+        assert "heavy use of passive voice" in fields["identifiable_nuances"]
 
     @pytest.mark.asyncio
     async def test_returns_empty_dict_on_empty_deltas(self):
         llm_mock = AsyncMock()
-        result = await aggregate_global([], llm_mock)
-        assert result == {}
+        fields, ok = await aggregate_global([], llm_mock)
+        assert ok is True
+        assert fields == {}
         llm_mock.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_returns_empty_dict_on_llm_failure(self):
         llm_mock = AsyncMock(side_effect=RuntimeError("timeout"))
-        result = await aggregate_global([_make_delta()], llm_mock)
-        assert result == {}
+        fields, ok = await aggregate_global([_make_delta()], llm_mock)
+        assert ok is False
+        assert fields == {}
 
     @pytest.mark.asyncio
     async def test_no_pydantic_tags_in_prompt(self):
@@ -348,6 +352,47 @@ class TestAggregateGlobal:
 
         await aggregate_global([_make_delta()], capture)
         assert "!!python/" not in captured[0], "model_dump() must strip Pydantic YAML tags"
+
+    @pytest.mark.asyncio
+    async def test_returns_tuple_on_success(self):
+        """aggregate_global now returns (dict, bool) tuple. True = success."""
+        llm_mock = AsyncMock(return_value=_valid_global_yaml())
+        result = await aggregate_global([_make_delta()], llm_mock)
+        assert isinstance(result, tuple), f"Expected tuple, got {type(result)}"
+        fields, ok = result
+        assert ok is True, "Should signal success when parse succeeds"
+        assert isinstance(fields, dict)
+        assert fields["agenda"] == "Promote open-source AI adoption."
+
+    @pytest.mark.asyncio
+    async def test_returns_tuple_with_false_on_missing_profile_key(self):
+        """parse_global_response returns None on missing 'profile' key → tuple (empty_dict, False)."""
+        async def bad_llm(prompt: str) -> str:
+            return "```yaml\nno_profile_key: here\n```"
+        result = await aggregate_global([_make_delta()], bad_llm)
+        assert isinstance(result, tuple)
+        fields, ok = result
+        assert ok is False, "Should signal failure when profile key missing"
+        assert isinstance(fields, dict)
+
+    @pytest.mark.asyncio
+    async def test_returns_tuple_with_false_on_non_yaml(self):
+        """parse_global_response returns None on invalid YAML → tuple (empty_dict, False)."""
+        async def bad_llm(prompt: str) -> str:
+            return "```yaml\nnot valid yaml ::: {{{{{{\n```"
+        result = await aggregate_global([_make_delta()], bad_llm)
+        assert isinstance(result, tuple)
+        fields, ok = result
+        assert ok is False, "Should signal failure when YAML is malformed"
+
+    @pytest.mark.asyncio
+    async def test_returns_tuple_with_false_on_llm_failure(self):
+        """LLM exception → tuple (empty_dict, False)."""
+        llm_mock = AsyncMock(side_effect=RuntimeError("timeout"))
+        result = await aggregate_global([_make_delta()], llm_mock)
+        assert isinstance(result, tuple)
+        fields, ok = result
+        assert ok is False, "Should signal failure on LLM exception"
 
 
 # ---------------------------------------------------------------------------

@@ -377,7 +377,7 @@ def _make_run_synthesis_patches(tmpdir: Path, *, aggregate_topic_side_effect=Non
     )
     aggregate_global_mock = AsyncMock(
         side_effect=aggregate_global_side_effect,
-        return_value={"agenda": "a", "worldview": "w"},
+        return_value=({"agenda": "a", "worldview": "w"}, True),
     )
 
     return [

@@ -157,14 +157,14 @@ def _emit_topic_fail(label: str, reason: str) -> None:
 async def aggregate_global(
     deltas: list[DeltaRecord],
     llm_call: LLMCaller,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], bool]:
     """Run DEEP_SYNTHESIS_PROMPT over all DeltaRecords → top-level Persona fields.
 
-    Returns a dict with keys: agenda, worldview, pivot_logic, identifiable_nuances.
-    On failure returns an empty dict (caller fills defaults).
+    Returns tuple (dict, success). dict has keys: agenda, worldview, pivot_logic, identifiable_nuances.
+    success=True on parse success, False if parse failed (dict will have empty defaults).
     """
     if not deltas:
-        return {}
+        return ({}, True)
 
     reports_yaml = yaml.dump([d.model_dump() for d in deltas])
     prompt = DEEP_SYNTHESIS_PROMPT.format(reports=reports_yaml)
@@ -173,14 +173,15 @@ async def aggregate_global(
         raw = await llm_call(prompt)
     except Exception as exc:
         logger.warning("aggregator: global synthesis LLM call failed — %s", exc)
-        return {}
+        return ({}, False)
 
     parsed = _parse_global_response(raw)
     if parsed is None:
         logger.warning("aggregator: global synthesis parse failed")
-        return {}
+        emit(level="warn", stage="aggregate", code="global_aggregation_parse_failed", message="LLM response missing or malformed 'profile' key")
+        return ({}, False)
 
-    return parsed
+    return (parsed, True)
 
 
 def _parse_global_response(raw: Any) -> dict[str, Any] | None:
@@ -206,9 +207,12 @@ def _parse_global_response(raw: Any) -> dict[str, Any] | None:
     if not isinstance(data, dict):
         return None
 
-    profile = data.get("profile", data)
+    # Require explicit 'profile' key; return None if missing or malformed
+    if "profile" not in data:
+        return None
+    profile = data["profile"]
     if not isinstance(profile, dict):
-        profile = {}
+        return None
 
     return {
         "agenda": str(profile.get("agenda", "")),
