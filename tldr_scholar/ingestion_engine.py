@@ -76,31 +76,37 @@ class LinkIngester:
         return None
 
     async def process_posts(self, posts: list[SocialPost]) -> list[SourceArticle]:
-        """Parallel process all links in a list of posts."""
+        """Parallel process ALL substantive links across posts (one SourceArticle per link).
+
+        For posts with NO substantive links, emit a single SourceArticle(body=None, url="") to preserve
+        a per-post record. For posts with multiple substantive links, emit one SourceArticle per link.
+        """
         tasks: list = []
-        task_post_idx: list[int] = []
-        post_links: list[Optional[str]] = [None] * len(posts)
+        owner_idx: list[int] = []
+        owner_link: list[str] = []
+        post_link_count: list[int] = [0] * len(posts)
+
         for idx, post in enumerate(posts):
-            # For now, we only take the FIRST substantive link per post
-            link = next((l for l in post.links if self.is_substantive(l)), None)
-            post_links[idx] = link
-            if link:
+            links = [l for l in post.links if self.is_substantive(l)]
+            post_link_count[idx] = len(links)
+            for link in links:
                 tasks.append(self.fetch_article(link))
-                task_post_idx.append(idx)
+                owner_idx.append(idx)
+                owner_link.append(link)
 
         fetched = await asyncio.gather(*tasks) if tasks else []
-        bodies: list[Optional[str]] = [None] * len(posts)
-        for i, body in zip(task_post_idx, fetched):
-            bodies[i] = body
-        success = len([b for b in bodies if b])
-        logger.info(f"Ingestion complete: {success} success, {len(bodies)-success} skipped/failed")
+        success = len([b for b in fetched if b])
+        logger.info(f"Ingestion complete: {success}/{len(fetched)} successful link fetches across {len(posts)} posts")
         now = datetime.now(timezone.utc)
-        return [
-            SourceArticle(
-                url=post_links[i] or "",
-                body=bodies[i],
-                fetched_at=now,
-                post=posts[i],
-            )
-            for i in range(len(posts))
-        ]
+
+        articles: list[SourceArticle] = []
+        # For posts with no substantive link, still emit a SourceArticle so the consumer
+        # has a 1:1 fallback. For posts with links, emit one SourceArticle per link.
+        post_has_emitted = [False] * len(posts)
+        for owner, link, body in zip(owner_idx, owner_link, fetched):
+            articles.append(SourceArticle(url=link, body=body, fetched_at=now, post=posts[owner]))
+            post_has_emitted[owner] = True
+        for idx, emitted in enumerate(post_has_emitted):
+            if not emitted:
+                articles.append(SourceArticle(url="", body=None, fetched_at=now, post=posts[idx]))
+        return articles
