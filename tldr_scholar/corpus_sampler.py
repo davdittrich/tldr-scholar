@@ -23,6 +23,9 @@ if TYPE_CHECKING:
 # Minimum posts per topic in the training sample when corpus permits.
 _FLOOR_PER_TOPIC = 10
 
+# Ceiling for scraper.scrape() per build_corpus call.
+_MAX_SCRAPE_POSTS = 10_000
+
 
 async def build_corpus(
     *,
@@ -57,7 +60,7 @@ async def build_corpus(
     # 1. Scrape
     # ------------------------------------------------------------------
     all_posts: list[SocialPost] = await scraper.scrape(
-        source_url, limit_months=window_months, max_posts=10_000
+        source_url, limit_months=window_months, max_posts=_MAX_SCRAPE_POSTS
     )
 
     # ------------------------------------------------------------------
