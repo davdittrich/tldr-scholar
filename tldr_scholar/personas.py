@@ -7,7 +7,7 @@ from typing import Literal
 
 import yaml
 from loguru import logger
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 
 from tldr_scholar.config import DEFAULT_PERSONA_DIR
 

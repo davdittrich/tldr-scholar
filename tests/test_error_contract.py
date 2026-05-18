@@ -3,10 +3,8 @@ from __future__ import annotations
 
 import io
 import json
-import os
 import sys
-from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 import yaml
@@ -359,7 +357,7 @@ class TestPersonaManagerIncompleteWarn:
 
     def test_get_persona_emits_warn_for_incomplete(self, tmp_path):
         """PersonaManager.get_persona() emits warn envelope when persona status=incomplete."""
-        from tldr_scholar.personas import PersonaManager, TopicProfile
+        from tldr_scholar.personas import PersonaManager
 
         # Write a minimal v2 incomplete persona YAML
         persona_data = {
