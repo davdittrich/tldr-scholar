@@ -3,9 +3,13 @@ from __future__ import annotations
 
 import textwrap
 from unittest.mock import patch, MagicMock
+
+import pytest
+
 from tldr_scholar.synthesize_style import correlate_post_to_source
 
-def test_correlate_post_to_source():
+@pytest.mark.asyncio
+async def test_correlate_post_to_source():
     statements = [
         {"id": "claim_1", "content": "X is a problem", "section": "introduction"},
         {"id": "claim_2", "content": "Y is the cause", "section": "discussion"},
@@ -27,7 +31,7 @@ def test_correlate_post_to_source():
     
     with patch("tldr_scholar.synthesize_style.summarize_via_gemini", return_value=(mock_response, None)), \
          patch("tldr_scholar.synthesize_style.ACP_AVAILABLE", True):
-        deltas = correlate_post_to_source(statements, post_text)
+        deltas = await correlate_post_to_source(statements, post_text)
         
     assert len(deltas) == 3
     assert deltas[0]["statement_id"] == "claim_1"

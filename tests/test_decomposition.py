@@ -3,9 +3,13 @@ from __future__ import annotations
 
 import textwrap
 from unittest.mock import patch, MagicMock
+
+import pytest
+
 from tldr_scholar.synthesize_style import decompose_source
 
-def test_decompose_source_extracts_claims():
+@pytest.mark.asyncio
+async def test_decompose_source_extracts_claims():
     text = "Introduction: X is a problem. Discussion: Y is the cause. Conclusion: Z is the fix."
     
     mock_response = textwrap.dedent("""
@@ -22,7 +26,7 @@ def test_decompose_source_extracts_claims():
     
     with patch("tldr_scholar.synthesize_style.summarize_via_gemini", return_value=(mock_response, None)), \
          patch("tldr_scholar.synthesize_style.ACP_AVAILABLE", True):
-        claims = decompose_source(text)
+        claims = await decompose_source(text)
         
     assert len(claims) == 3
     assert claims[0]["id"] == "claim_1"
