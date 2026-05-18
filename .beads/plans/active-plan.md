@@ -1,164 +1,51 @@
----
-title: "tldr-scholar: Clean code pass (8 issues)"
-status: in-progress
-created: 2026-04-03
-work_units: 2
-baseline_tests: 64
----
+# Active Plan
+<!-- approved: pending -->
+<!-- gate-iterations: 2 (pragmatic-path) -->
+<!-- user-approved: pending -->
+<!-- status: drafted -->
+<!-- epics: tldr-scholar-qe4, tldr-scholar-zaf, tldr-scholar-4lg -->
 
-# tldr-scholar Clean Code Pass
+# Epic Plan v3 — Land v4 social-feed + Critical review remediation + v2 residuals
 
-## Issues
+## Three-epic scope (26 atomic children open)
 
-| # | Severity | File | Issue |
-|---|----------|------|-------|
-| 1 | REQUIRED | backends/lemonade.py | System-only message violates OpenAI chat spec |
-| 2 | REQUIRED | ingest.py | Unused `Optional` import |
-| 3 | REQUIRED | cli.py | Unused `SummaryRequest` import |
-| 4 | REQUIRED | cli.py | Lazy `urlparse` import inside function |
-| 5 | SUGGESTION | ingest.py | PDF extraction duplicated between `_ingest_pdf` and `_ingest_url` |
-| 6 | SUGGESTION | config.py | Unused `Any`, `Optional` imports |
-| 7 | SUGGESTION | hashtags.py | Unused `Optional` import |
-| 8 | SUGGESTION | backends/ollama.py | Unused `logger` import |
+### Epic tldr-scholar-qe4 — Complete social-feed-synthesis v4 (P2, 11 open)
+qe4.1 commit baseline (root, blocks rest); qe4.11 declare dev deps (pytest-asyncio + rich); qe4.12 SUPERSEDED-BY annotation on v1/v2 plans; qe4.2 ScraperFactory.get_scraper raise UnknownURLError; qe4.3 exponential backoff; qe4.7 SourceArticle bridge (blocks qe4.4); qe4.4 all substantive links; qe4.5 progress bar; qe4.6 --skip-links flag; qe4.8 CorpusCache; qe4.9 test expansion (deps on qe4.2/3/4/5/6/7/8/11). qe4.10 CLOSED (--concurrency already exists in worktree).
 
----
+### Epic tldr-scholar-zaf — Critical review remediation (P2, 13 open)
+Blocking (5): zaf.1 is_substantive whitelist; zaf.2 BaseScraper inheritance; zaf.3 LLM index validation; zaf.5 narrow scrapers exceptions; zaf.7 narrow ingestion exceptions.
+Required (4): zaf.4 MD5 usedforsecurity=False; zaf.6 drop unused imports; zaf.8 scope httpx client; zaf.9 hoist corpus init (UnboundLocalError, rescoped from "orphan").
+Suggestions (4): zaf.10 skip no-op asyncio.sleep tasks; zaf.11 generator return for process_posts; zaf.12 explicit httpx import in tests; zaf.13 log skipped pairs in decomposition loop.
 
-## WU-1: Fix Lemonade message format + extract shared PDF helper
+### Epic tldr-scholar-4lg — v2 residuals cleanup (P3, 2 open)
+4lg.1 print→logger (depends qe4.1); tldr-scholar-2k7 unused imports os/Any in personas.py.
 
-**Issues:** #1 (system-only message), #5 (PDF extraction duplication)
-**Files:** `tldr_scholar/backends/lemonade.py`, `tldr_scholar/ingest.py`,
-  `tests/test_backends.py`, `tests/test_ingest.py`
+## Iter-2 gate fixes applied (Path B: pragmatic)
 
-### Fix #1: Add user message to Lemonade chat completions
-
-The OpenAI chat completions spec requires at least one user message.
-Current code sends only a system message containing both the instruction
-and the document. Fix: split into system (instruction) + user (document).
-
-This requires restructuring how the Lemonade backend builds its messages.
-Instead of formatting the full `SUMMARY_PROMPT_TEMPLATE` into a single
-system message, split it:
-
-```python
-def summarize(self, text, max_chars, focus, hashtag_instruction):
-    system_msg = (
-        f"Summarize the following document in approximately {max_chars} characters.\n"
-        f"Focus on: {focus}.\n"
-        "Be concise, precise, and factual. Do not add information not in the source.\n"
-        f"{hashtag_instruction}"
-    ).strip()
-
-    response = httpx.post(
-        f"{self._host}/v1/chat/completions",
-        json={
-            "model": model,
-            "messages": [
-                {"role": "system", "content": system_msg},
-                {"role": "user", "content": text},
-            ],
-            "stream": False,
-        },
-        timeout=self._timeout,
-    )
-```
-
-Note: this means Lemonade no longer uses `SUMMARY_PROMPT_TEMPLATE` — it builds
-its own system/user split. The template remains used by Gemini and Ollama
-(which use single-prompt APIs, not chat). This is correct: the chat API
-naturally separates instruction from content, making `<document>` delimiters
-unnecessary for Lemonade.
-
-**Do NOT change Gemini or Ollama** — they use single-prompt APIs where the
-template with `<document>` delimiters is the right approach.
-
-### Fix #5: Extract shared PDF extraction helper
-
-Both `_ingest_pdf(path)` and `_ingest_url`'s PDF branch do:
-```python
-import fitz
-import pymupdf4llm
-doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-pages = list(range(min(20, len(doc))))
-text = pymupdf4llm.to_markdown(doc, pages=pages)
-```
-
-Extract to a helper that takes an already-opened `fitz.Document` — this keeps
-`fitz.open()` in each caller, preserving `_ingest_pdf`'s password detection:
-
-```python
-def _pdf_doc_to_text(doc, max_pages: int = 20) -> str:
-    """Convert an open fitz.Document to text. Lazy-imports pymupdf4llm."""
-    import pymupdf4llm
-    pages = list(range(min(max_pages, len(doc))))
-    try:
-        text = pymupdf4llm.to_markdown(doc, pages=pages)
-    except Exception:
-        return ""
-    return text.strip() if text else ""
-```
-
-`_ingest_pdf` opens the doc (with password detection), then calls `_pdf_doc_to_text(doc)`.
-`_ingest_url` opens the doc (no password check needed for URLs), then calls `_pdf_doc_to_text(doc)`.
-Each caller still does `import fitz; doc = fitz.open(...)` — the shared helper only
-deduplicates the `pymupdf4llm.to_markdown` conversion.
-
-### TDD Tests
-- Lemonade backend mock: verify `messages` list has both system and user roles
-- Existing Lemonade tests still pass (response parsing unchanged)
-- Existing ingest tests still pass (behavior unchanged)
-
----
-
-## WU-2: Remove all unused imports + move urlparse to module top
-
-**Issues:** #2, #3, #4, #6, #7, #8
-**Files:** `tldr_scholar/ingest.py`, `tldr_scholar/cli.py`, `tldr_scholar/config.py`,
-  `tldr_scholar/hashtags.py`, `tldr_scholar/backends/ollama.py`
-
-### Changes
-
-1. **`ingest.py`**: Remove `from typing import Optional` (unused)
-
-2. **`cli.py`**: Remove `from tldr_scholar.models import SummaryRequest` (unused).
-   Move `from urllib.parse import urlparse` to module top (currently lazy inside function).
-
-3. **`config.py`**: Remove `from typing import Any, Optional` (unused)
-
-4. **`hashtags.py`**: Remove `from typing import Optional` (unused)
-
-5. **`backends/ollama.py`**: Add `logger.debug` to the except block rather than
-   removing the import — consistency with other backends that log on failure:
-   ```python
-   except Exception as e:
-       logger.debug(f"Ollama request failed: {e}")
-       return None
-   ```
-
-### TDD Tests
-- No behavioral changes — all 64 existing tests pass unchanged
-
----
-
-## Execution Order
-
-WU-1 (Lemonade + PDF helper) → WU-2 (imports). Sequential.
-
-## Files Modified
-
-| File | WU |
+| Finding | Action |
 |---|---|
-| `tldr_scholar/backends/lemonade.py` | WU-1 |
-| `tldr_scholar/ingest.py` | WU-1, WU-2 |
-| `tldr_scholar/cli.py` | WU-2 |
-| `tldr_scholar/config.py` | WU-2 |
-| `tldr_scholar/hashtags.py` | WU-2 |
-| `tldr_scholar/backends/ollama.py` | WU-2 |
-| `tests/test_backends.py` | WU-1 |
+| qe4.10 redundant (--concurrency already exists) | CLOSED with reason |
+| 4lg.1 missing qe4.1 dep | dep added |
+| Ticket count drift | recounted: 26 open |
+| zaf.9 misdiagnosis (orphan var) | rescoped to UnboundLocalError fix |
+| qe4.2 title cosmetic (from_url vs get_scraper) | title corrected |
+| 5 critical-review Suggestions unticketed | re-spawned reviewer, filed zaf.10-13 (S1 print overlap → folded into 4lg.1) |
 
-## Success Criteria
+## Iter-2 findings ACCEPTED as implementation parameters (not scope creep)
 
-1. All 64 existing tests pass
-2. Lemonade sends both system + user messages
-3. PDF extraction in exactly one function (no duplication)
-4. Zero unused imports across all source files
-5. `urlparse` imported at module top in cli.py
+| Finding | Rationale |
+|---|---|
+| qe4.3 backoff params (base=1, cap=60, jitter_max=1) | Standard HTTP retry defaults (RFC 6585, AWS SDK convention) |
+| qe4.7 SourceArticle field set | Derived from existing worktree usage; ticket guards "do NOT add fields beyond what consumers use" |
+| qe4.8 TTL=1h | Reasonable default; can be tuned in follow-up |
+| qe4.11 `rich` runtime dep | Required to honor v4 spec progress bar; ticket scope acknowledges deviation |
+| qe4.5 rich vs tqdm choice | Single-library choice committed at planning to avoid runtime dispatch complexity |
+| qe4.12 SUPERSEDED-BY housekeeping | Closes audit loop; prevents repeat misclassification |
+
+## DoD (epic level)
+- [ ] All 26 child tickets closed
+- [ ] Full pytest green
+- [ ] `tldr-scholar-synthesize-style https://fediscience.org/@davdittrich` runs end-to-end
+- [ ] All commits reference parent epic ID
+- [ ] `bd preflight` passes
+- [ ] `git status` clean post-push
