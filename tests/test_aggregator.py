@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import io
 import json
-import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -28,7 +27,7 @@ from tldr_scholar.aggregator import (
     aggregate_topic,
 )
 from tldr_scholar.personas import DeltaRecord, Persona, PersonaManager, TopicProfile
-from tldr_scholar.prompts import DEEP_SYNTHESIS_PROMPT, TOPIC_AGGREGATION_PROMPT
+from tldr_scholar.prompts import TOPIC_AGGREGATION_PROMPT
 
 
 # ---------------------------------------------------------------------------

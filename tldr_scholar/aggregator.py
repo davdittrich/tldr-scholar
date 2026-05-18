@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import yaml
 from typing import Any, Awaitable, Callable
 
 from pydantic import BaseModel, ValidationError
@@ -149,8 +150,6 @@ def _emit_topic_fail(label: str, reason: str) -> None:
 # ---------------------------------------------------------------------------
 # Global aggregation
 # ---------------------------------------------------------------------------
-
-import yaml  # noqa: E402  (stdlib-adjacent; placed after project imports for clarity)
 
 
 async def aggregate_global(
