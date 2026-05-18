@@ -36,7 +36,6 @@ def _get_model():
 
 def embed_text(text: str) -> list[float]:
     """Embed a single text string. Returns a 384-d normalized vector as list[float]."""
-    import numpy as np
     model = _get_model()
     vec = model.encode([text], normalize_embeddings=True)
     return vec[0].tolist()
@@ -61,7 +60,11 @@ def cluster_posts(
 
     Args:
         posts: List of post text strings.
-        seed:  Random seed for HDBSCAN reproducibility.
+        seed:  Reserved for reproducibility.  Currently a no-op: hdbscan.HDBSCAN
+               does not expose a random_state parameter in all released versions,
+               and the euclidean-metric tree path is deterministic regardless.
+               The parameter is kept so callers can pass a seed without breakage
+               when upstream support is added.
 
     Returns:
         (labels, centroids) where:
