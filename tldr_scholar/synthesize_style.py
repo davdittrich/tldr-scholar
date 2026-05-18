@@ -21,6 +21,7 @@ from loguru import logger
 
 from tldr_scholar.config import DEFAULT_PERSONA_DIR
 from tldr_scholar.corpus_cache import CorpusCache
+from tldr_scholar.corpus_sampler import build_corpus
 from tldr_scholar.ingest import ingest
 from tldr_scholar.scrapers import ScraperFactory, SocialPost, UnknownURLError
 from tldr_scholar.ingestion_engine import LinkIngester
@@ -114,67 +115,23 @@ async def run_synthesis(args):
             logger.error(f"URL not supported: {e}")
             sys.exit(1)
 
-        # 1. Fetch ALL posts from 12 months (cache-backed)
-        corpus_cache = CorpusCache()
-        cached = corpus_cache.get(source_str, args.months)
-        if cached is not None:
-            logger.info(f"CorpusCache HIT: using {len(cached)} cached posts for {source_str}")
-            all_posts = cached
-        else:
-            logger.info(f"Scraping all posts from past {args.months} months...")
-            all_posts = await scraper.scrape(source_str, limit_months=args.months, max_posts=1000)
-            if all_posts:
-                corpus_cache.put(source_str, args.months, all_posts)
-        if not all_posts:
-            logger.error("No posts found.")
-            sys.exit(1)
-
-        # 2. Classify ALL into domains
-        logger.info(f"Classifying {len(all_posts)} posts into domains...")
-        domain_map = await classify_domains(all_posts)
-
-        # Sanitize LLM output: drop non-int and out-of-range indices per domain,
-        # then drop empty domains entirely.
-        n_posts = len(all_posts)
-        sanitized: dict = {}
-        for domain, indices in domain_map.items():
-            valid = [i for i in indices if isinstance(i, int) and 0 <= i < n_posts]
-            dropped = len(indices) - len(valid)
-            if dropped:
-                logger.warning(f"Domain '{domain}': dropped {dropped} invalid LLM-emitted indices")
-            if valid:
-                sanitized[domain] = valid
-            else:
-                logger.warning(f"Domain '{domain}': empty after validation, dropping")
-        domain_map = sanitized
-        # 3. Sampling: Target 200, balance domains, prefer success
-        target_sample_size = args.max_posts # 200
-        
-        # Sort each domain by engagement (descending)
-        for domain in domain_map:
-            domain_map[domain].sort(key=lambda idx: all_posts[idx].engagement if idx < len(all_posts) else 0, reverse=True)
-        
-        chosen_indices = set()
-        
-        # Round-robin selection to ensure balance and all domains present
-        domains = list(domain_map.keys())
-        if not domains:
-            # Fallback to simple success sampling if classification failed
-            logger.warning("No domains identified. Falling back to global engagement sort.")
-            sorted_all = sorted(range(len(all_posts)), key=lambda i: all_posts[i].engagement, reverse=True)
-            chosen_indices.update(sorted_all[:target_sample_size])
-        else:
-            ptr = {d: 0 for d in domains}
-            while len(chosen_indices) < target_sample_size and any(ptr[d] < len(domain_map[d]) for d in domains):
-                for d in domains:
-                    if ptr[d] < len(domain_map[d]):
-                        chosen_indices.add(domain_map[d][ptr[d]])
-                        ptr[d] += 1
-                        if len(chosen_indices) >= target_sample_size:
-                            break
-
-        sampled_posts = [all_posts[i] for i in sorted(list(chosen_indices))]
-        logger.info(f"Sampled {len(sampled_posts)} posts balanced across domains (success preferred).")
+        # 1-3. Scrape -> injection-filter -> cluster -> topic-balanced sample
+        logger.info(f"Building corpus: scrape {args.window_months}m window, n_train={args.n_train}...")
+        corpus_result = await build_corpus(
+            scraper=scraper,
+            source_url=source_str,
+            window_months=args.window_months,
+            n_train=args.n_train,
+            n_judge_per_topic=args.n_judge_per_topic,
+            n_manual_per_topic=args.n_manual_per_topic,
+            seed=42,
+        )
+        sampled_posts: list[SocialPost] = corpus_result["training"]
+        logger.info(
+            f"Corpus ready: {len(sampled_posts)} training posts; "
+            f"{sum(len(v) for v in corpus_result['eval_judge'].values())} judge-eval; "
+            f"{sum(len(v) for v in corpus_result['eval_manual'].values())} manual-eval."
+        )
 
         # 4. Ingest Links for samples
         corpus = []
@@ -222,6 +179,14 @@ def main():
     parser.add_argument("--name")
     parser.add_argument("--months", type=int, default=12)
     parser.add_argument("--max-posts", type=int, default=200)
+    parser.add_argument("--window-months", dest="window_months", type=int, default=12,
+                        help="Scrape window in months (default: 12).")
+    parser.add_argument("--n-train", dest="n_train", type=int, default=200,
+                        help="Training set size (default: 200).")
+    parser.add_argument("--n-judge-per-topic", dest="n_judge_per_topic", type=int, default=10,
+                        help="LLM-judge eval holdout per topic (default: 10).")
+    parser.add_argument("--n-manual-per-topic", dest="n_manual_per_topic", type=int, default=5,
+                        help="Manual eval holdout per topic (default: 5).")
     parser.add_argument("--concurrency", type=int, default=5)
     parser.add_argument("--skip-links", action="store_true", help="Skip article ingestion; use post bodies only.")
     args = parser.parse_args()
