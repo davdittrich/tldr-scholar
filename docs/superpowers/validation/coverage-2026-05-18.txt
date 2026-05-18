@@ -1,0 +1,89 @@
+tldr-scholar nwl-epic WU-7 coverage report — 2026-05-18
+Generated: python3 -m pytest tests/ --cov=tldr_scholar --cov-report=term-missing
+Platform: linux, Python 3.14.5, pytest-9.0.3
+Branch: nwl-epic
+
+============================================================
+Test suite summary
+============================================================
+300 passed, 6 skipped, 1 warning
+
+============================================================
+Per-module coverage
+============================================================
+Name                                   Stmts   Miss  Cover   Missing
+---------------------------------------------------------------------
+tldr_scholar/__init__.py                  59     45    24%   38-43, 66-146, 155-159, 164-169
+tldr_scholar/__main__.py                   2      2     0%   2-4
+tldr_scholar/aggregator.py                93     16    83%   119, 133, 136-137, 178-179, 191, 195-199, 202-203, 205, 209
+tldr_scholar/backends/__init__.py         34      9    74%   41, 68, 79-91
+tldr_scholar/backends/base.py              7      1    86%   45
+tldr_scholar/config.py                    16      0   100%
+tldr_scholar/corpus_cache.py              79      7    91%   57, 64, 78-82
+tldr_scholar/doi.py                       27      1    96%   65
+tldr_scholar/error_contract.py            42      2    95%   61-62
+tldr_scholar/hashtags.py                  49      4    92%   77, 89-90, 127
+tldr_scholar/ingest.py                    21      0   100%
+tldr_scholar/ingestion_engine.py          31      5    84%   40-42, 49, 53
+tldr_scholar/models.py                    29      0   100%
+tldr_scholar/oa_fetch.py                  80     30    63%   57-67, 75-82, 93-95, 100-107, 110-117, 120-130
+tldr_scholar/personas.py                  92      2    98%   30, 32
+tldr_scholar/preflight.py                 18      2    89%   18-19
+tldr_scholar/prompts.py                   47      2    96%   83, 86
+tldr_scholar/refine_persona.py            18     18     0%   1-28
+tldr_scholar/scrapers.py                 172    105    39%   73-77, 84-90, 93-102, 106-156, 166-235
+tldr_scholar/source_baseline.py           70      8    89%   70-73, 77-78, 89-90
+tldr_scholar/synthesize_style.py         229     60    74%   44-46, 70, 74, 76, 80-82, 87-88, 93-97, 145-147, 163-164, 190-191, 212-213, 228-229, 249-256, 268, 275-276, 315-316, 371-388, 395-396, 415-447, 450
+tldr_scholar/topic_cluster.py             79     45    43%   28-29, 81, 100-102, 114-139, 147, 157-184
+tldr_scholar/types.py                     10      0   100%
+---------------------------------------------------------------------
+TOTAL                                   2090    578    72%
+
+============================================================
+Test files mapped to spec testing-strategy rows
+============================================================
+SPEC ROW                         FILE                          STATUS
+test_topic_cluster.py            tests/test_topic_cluster.py   PRESENT
+test_source_baseline.py          tests/test_source_baseline.py PRESENT
+test_correlator.py               tests/test_correlator.py      PRESENT
+test_persona_v2.py               tests/test_persona_v2.py      CREATED (WU-7)
+test_generation_blend.py         tests/test_generation_blend.py PRESENT
+test_synthesize_style_v2.py      tests/test_synthesize_style_v2.py CREATED (WU-7)
+test_scrape_filter.py            tests/test_scrape_filter.py   PRESENT
+test_error_contract.py           tests/test_error_contract.py  PRESENT
+test_corpus_sampler.py           tests/test_corpus_sampler.py  PRESENT
+test_cli_flags.py                tests/test_cli_flags.py       PRESENT (not in spec table, from WU-5b)
+test_corpus_cache_stages.py      tests/test_corpus_cache_stages.py PRESENT (not in spec table)
+
+============================================================
+Gap-closer tests added in WU-7
+============================================================
+1. Gap-closer 1 (flat-priority removal AST scan):
+   File: tests/test_generation_blend.py::TestFlatPriorityRemoval::test_legacy_flat_collect_loop_is_absent
+   Status: ALREADY PRESENT from WU-6 — verified passes
+   Patterns checked: all_revelation, all_suppression, all_rhetorical, unique_revelation, unique_suppression
+
+2. Gap-closer 2 (preflight invocation at run_synthesis entry):
+   File: tests/test_synthesize_style_v2.py::test_preflight_called_at_run_synthesis_entry
+   Status: ADDED in WU-7
+   Assertion: check_embedding_model_cached() called once before ACP_AVAILABLE guard
+
+3. PromptBuilder purity AST scan:
+   File: tests/test_generation_blend.py::TestPromptModulePurity::test_prompts_module_has_no_ml_imports
+   Status: ALREADY PRESENT from WU-6 — verified passes
+
+4. Persona v2 round-trip extensions:
+   File: tests/test_persona_v2.py::test_clustered_post_text_preserved_across_save_load
+   File: tests/test_persona_v2.py::test_incomplete_persona_roundtrip
+   Status: ADDED in WU-7
+
+============================================================
+DoD checklist
+============================================================
+[x] pytest all green (300 passed, 6 skipped)
+[x] No real Gemini API calls in unit tests
+[x] All 11 test files map to spec testing-strategy rows
+[x] PromptBuilder purity AST assertion passes
+[x] Flat-priority code path removal assertion passes
+[x] preflight invocation asserted (test_synthesize_style_v2.py)
+[x] Coverage report committed under docs/superpowers/validation/
