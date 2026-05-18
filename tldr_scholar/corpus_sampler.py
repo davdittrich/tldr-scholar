@@ -95,7 +95,7 @@ async def build_corpus(
     # 3. Cluster
     # ------------------------------------------------------------------
     texts = [p.text for p in filtered]
-    labels, _centroids = cluster_posts(texts, seed=seed)
+    labels, centroids = cluster_posts(texts, seed=seed)
 
     # Map topic label → list of SocialPost (same order as filtered)
     by_topic: dict[str, list[SocialPost]] = defaultdict(list)
@@ -129,8 +129,20 @@ async def build_corpus(
     # ------------------------------------------------------------------
     training = _sample_balanced(training_pool, n_train, rng)
 
+    # Build parallel topic label list for training posts.
+    # by_topic maps topic → list[SocialPost]; build id → topic for O(1) lookup.
+    post_to_topic: dict[int, str] = {}
+    for topic, posts in by_topic.items():
+        for post in posts:
+            post_to_topic[id(post)] = topic
+    training_topic_labels: list[str] = [
+        post_to_topic.get(id(p), "_global") for p in training
+    ]
+
     return {
         "training": training,
+        "training_topic_labels": training_topic_labels,
+        "topic_centroids": centroids,
         "eval_judge": eval_judge,
         "eval_manual": eval_manual,
     }

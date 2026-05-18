@@ -14,6 +14,7 @@ CLI flags:
 import argparse
 import sys
 import asyncio
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +33,9 @@ from tldr_scholar.source_baseline import build_baselines
 from tldr_scholar.correlator import correlate_against_baselines
 from tldr_scholar._envelope import emit as emit_envelope
 from tldr_scholar.preflight import check_embedding_model_cached
+from tldr_scholar.aggregator import aggregate_topic, aggregate_global
+from tldr_scholar.personas import DeltaRecord, Persona, TopicProfile
+from tldr_scholar.topic_cluster import EMBEDDING_MODEL_NAME
 
 try:
     from gemini_acp import summarize_via_gemini, ACP_AVAILABLE
@@ -123,6 +127,8 @@ async def run_synthesis(args):
             seed=42,
         )
         sampled_posts: list[SocialPost] = corpus_result["training"]
+        training_topic_labels: list[str] = corpus_result.get("training_topic_labels", [])
+        topic_centroids: dict[str, list[float]] = corpus_result.get("topic_centroids", {})
         logger.info(
             f"Corpus ready: {len(sampled_posts)} training posts; "
             f"{sum(len(v) for v in corpus_result['eval_judge'].values())} judge-eval; "
@@ -144,8 +150,12 @@ async def run_synthesis(args):
 
     # 5. Atomic Pipeline
     final_reports = []
+    # Parallel to corpus: topic label and post text per entry (for grouping)
+    report_topic_labels: list[str] = []
+    report_post_texts: list[str] = []
     caller = _llm_caller()
     for i, (source_text, post_text) in enumerate(corpus):
+        topic_label = training_topic_labels[i] if i < len(training_topic_labels) else "_global"
         logger.info(f">>> Analyzing Pair {i+1}/{len(corpus)}")
         baselines = await build_baselines(
             source_text,
@@ -168,21 +178,76 @@ async def run_synthesis(args):
         )
         if delta_records:
             final_reports.extend(delta_records)
+            for _ in delta_records:
+                report_topic_labels.append(topic_label)
+                report_post_texts.append(post_text)
         else:
             logger.debug(f"Skipping pair {i+1}: all correlations returned no delta")
 
-    # 6. Synthesis
-    final_reports_dicts = [r.model_dump() for r in final_reports]
-    synth_data = await synthesize_deep_profile(final_reports_dicts)
-    data = synth_data.get("profile", {})
-    data["attribute_confidence"] = synth_data.get("confidence", {})
-    if args.name: data["name"] = args.name
+    # 6. Per-topic and global aggregation
+    # Group final_reports by topic label
+    topic_to_deltas: dict[str, list[DeltaRecord]] = defaultdict(list)
+    topic_to_posts: dict[str, list[str]] = defaultdict(list)
+    for delta, tlabel, ptext in zip(final_reports, report_topic_labels, report_post_texts):
+        topic_to_deltas[tlabel].append(delta)
+        if ptext not in topic_to_posts[tlabel]:
+            topic_to_posts[tlabel].append(ptext)
 
-    name = data.get("name", "persona")
-    output_path = DEFAULT_PERSONA_DIR / f"{name}.yaml"
+    # Also collect posts-only from sampled_posts that had no delta records
+    # (to ensure posts field is populated from full sampled set)
+    seen_post_texts: set[str] = set()
+    for posts_list in topic_to_posts.values():
+        seen_post_texts.update(posts_list)
+    for i, post in enumerate(sampled_posts):
+        tlabel = training_topic_labels[i] if i < len(training_topic_labels) else "_global"
+        if post.text not in seen_post_texts:
+            topic_to_posts[tlabel].append(post.text)
+            seen_post_texts.add(post.text)
+
+    # Build TopicProfile per topic
+    topics: dict[str, TopicProfile] = {}
+    for tlabel in set(list(topic_to_deltas.keys()) + list(topic_to_posts.keys())):
+        centroid = topic_centroids.get(tlabel, [])
+        posts_for_topic = list(topic_to_posts.get(tlabel, []))
+        deltas_for_topic = list(topic_to_deltas.get(tlabel, []))
+        tp = await aggregate_topic(
+            label=tlabel,
+            centroid=centroid,
+            posts=posts_for_topic,
+            deltas=deltas_for_topic,
+            llm_call=caller,
+        )
+        topics[tlabel] = tp
+
+    # If no topics at all, create a _global fallback so Persona.topics is non-empty
+    if not topics:
+        topics["_global"] = TopicProfile(
+            label="_global",
+            centroid=[],
+            sample_size=0,
+            posts=[p.text for p in sampled_posts],
+        )
+
+    # Global synthesis
+    global_fields = await aggregate_global(final_reports, caller)
+
+    # Build Persona
+    persona_name = args.name or "persona"
+    persona = Persona(
+        name=persona_name,
+        embedding_model=EMBEDDING_MODEL_NAME,
+        status="complete",
+        topics=topics,
+        agenda=global_fields.get("agenda", ""),
+        worldview=global_fields.get("worldview", ""),
+        pivot_logic=global_fields.get("pivot_logic", ""),
+        identifiable_nuances=global_fields.get("identifiable_nuances", []),
+    )
+
+    output_path = DEFAULT_PERSONA_DIR / f"{persona_name}.yaml"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w") as f:
-        yaml.dump(data, f, sort_keys=False)
+        yaml.dump(persona.model_dump(), f, sort_keys=False)
     logger.info(f"Success! {output_path}")
 
 def main():
