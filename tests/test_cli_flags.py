@@ -135,6 +135,8 @@ def test_min_cluster_custom():
 def test_min_cluster_propagated_to_build_corpus():
     """--min-cluster 7 must reach build_corpus as min_cluster=7 kwarg."""
     import asyncio
+    import tempfile
+    from pathlib import Path
     from unittest.mock import patch, MagicMock, AsyncMock
 
     # Simulate argparse result
@@ -158,7 +160,8 @@ def test_min_cluster_propagated_to_build_corpus():
         }
 
     # Patch build_corpus in synthesize_style's namespace
-    with patch("tldr_scholar.synthesize_style.build_corpus", side_effect=fake_build_corpus):
+    with patch("tldr_scholar.synthesize_style.build_corpus", side_effect=fake_build_corpus), \
+         patch("tldr_scholar.synthesize_style.CACHE_ROOT", Path(tempfile.mkdtemp())):
         # Call run_synthesis but it will fail after build_corpus (that's fine, we only check kwargs)
         with patch("tldr_scholar.synthesize_style.ACP_AVAILABLE", False):
             try:
@@ -186,6 +189,7 @@ def test_min_cluster_propagated_to_build_corpus():
     with patch("tldr_scholar.synthesize_style.ACP_AVAILABLE", True), \
          patch("tldr_scholar.synthesize_style.build_corpus", side_effect=fake_build_corpus2), \
          patch("tldr_scholar.synthesize_style.check_embedding_model_cached"), \
+         patch("tldr_scholar.synthesize_style.CACHE_ROOT", Path(tempfile.mkdtemp())), \
          patch("tldr_scholar.synthesize_style.ScraperFactory") as mock_sf, \
          patch("tldr_scholar.synthesize_style.httpx.AsyncClient") as mock_client:
 
