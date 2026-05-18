@@ -223,3 +223,48 @@ class TestSentenceSplitting:
         assert ext_rec is not None
         # extractive_summary has 3 sentences → statements should have 3 items
         assert len(ext_rec.statements) >= 2, "Should split into multiple sentences"
+
+
+class TestPromptSecurity:
+    """Prompt-template structural security: external content must be wrapped."""
+
+    @staticmethod
+    def _content_in_any_wrapper(template: str, field: str) -> bool:
+        """Return True if *field* appears inside ANY <untrusted_content> block.
+
+        The templates contain ``<untrusted_content>`` as an inline reference in
+        the "treat as data" header line.  We only want to match actual delimiter
+        blocks, which are delimited by a newline immediately after the opening
+        tag (``<untrusted_content>\\n``).
+        """
+        OPEN = "<untrusted_content>\n"
+        CLOSE = "</untrusted_content>"
+        idx = 0
+        while True:
+            start = template.find(OPEN, idx)
+            if start == -1:
+                return False
+            end = template.find(CLOSE, start)
+            if end == -1:
+                return False
+            if field in template[start:end]:
+                return True
+            idx = end + len(CLOSE)
+
+    def test_correlation_prompt_wraps_statements_in_untrusted_content(self):
+        """CORRELATION_PROMPT must place {statements} inside <untrusted_content>."""
+        from tldr_scholar.prompts import CORRELATION_PROMPT
+
+        assert self._content_in_any_wrapper(CORRELATION_PROMPT, "{statements}"), (
+            "{statements} must be inside an actual <untrusted_content>...</untrusted_content> "
+            "delimiter block in CORRELATION_PROMPT"
+        )
+
+    def test_deep_synthesis_prompt_wraps_reports_in_untrusted_content(self):
+        """DEEP_SYNTHESIS_PROMPT must place {reports} inside <untrusted_content>."""
+        from tldr_scholar.prompts import DEEP_SYNTHESIS_PROMPT
+
+        assert self._content_in_any_wrapper(DEEP_SYNTHESIS_PROMPT, "{reports}"), (
+            "{reports} must be inside an actual <untrusted_content>...</untrusted_content> "
+            "delimiter block in DEEP_SYNTHESIS_PROMPT"
+        )
