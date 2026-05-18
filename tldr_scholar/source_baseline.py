@@ -10,7 +10,6 @@ full=True            → all three attempted; each failure isolated.
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Optional
 

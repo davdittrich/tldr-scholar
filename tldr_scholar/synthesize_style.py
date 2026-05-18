@@ -27,7 +27,7 @@ from tldr_scholar.corpus_sampler import build_corpus
 from tldr_scholar.ingest import ingest
 from tldr_scholar.scrapers import ScraperFactory, SocialPost, UnknownURLError
 from tldr_scholar.ingestion_engine import LinkIngester
-from tldr_scholar.prompts import DECOMPOSITION_PROMPT, CORRELATION_PROMPT, DEEP_SYNTHESIS_PROMPT
+from tldr_scholar.prompts import DEEP_SYNTHESIS_PROMPT
 from tldr_scholar.source_baseline import build_baselines
 from tldr_scholar.correlator import correlate_against_baselines
 from tldr_scholar._envelope import emit as emit_envelope
@@ -87,23 +87,7 @@ async def classify_domains(posts: list[SocialPost]) -> dict[str, list[int]]:
     data = await call_gemini(prompt, "Classification")
     return data if isinstance(data, dict) else {}
 
-async def decompose_source(text: str) -> list[dict]:
-    prompt = DECOMPOSITION_PROMPT.format(text=text)
-    data = await call_gemini(prompt, "Decomposition")
-    if isinstance(data, list):
-        for i, item in enumerate(data):
-            if isinstance(item, dict) and 'id' not in item:
-                item['id'] = item.get('statement_id', f'c{i+1}')
-        return data
-    return []
-
-async def correlate_post_to_source(statements: list[dict], post_text: str) -> list[dict]:
-    statements_yaml = yaml.dump(statements)
-    prompt = CORRELATION_PROMPT.format(statements=statements_yaml, post_text=post_text)
-    data = await call_gemini(prompt, "Correlation")
-    return data if isinstance(data, list) else []
-
-async def synthesize_deep_profile(reports: list[list[dict]]) -> dict:
+async def synthesize_deep_profile(reports: list[dict]) -> dict:
     reports_yaml = yaml.dump(reports)
     prompt = DEEP_SYNTHESIS_PROMPT.format(reports=reports_yaml)
     data = await call_gemini(prompt, "Synthesis")
@@ -160,26 +144,27 @@ async def run_synthesis(args):
 
     # 5. Atomic Pipeline
     final_reports = []
+    caller = _llm_caller()
     for i, (source_text, post_text) in enumerate(corpus):
         logger.info(f">>> Analyzing Pair {i+1}/{len(corpus)}")
         baselines = await build_baselines(
             source_text,
             full=getattr(args, "full_baselines", False),
-            llm_call=_llm_caller(),
+            llm_call=caller,
         )
         if baselines.claims is None and baselines.extractive_summary is None and baselines.abstractive_summary is None:
             emit_envelope(
                 level="warn",
                 stage="source_baseline",
                 code="all_baselines_failed",
-                msg="All 3 baselines failed for source; dropping from corpus.",
+                message="All 3 baselines failed for source; dropping from corpus.",
                 drops=[{"source": f"pair_{i+1}"}],
             )
             continue
         delta_records = await correlate_against_baselines(
             post_text,
             baselines,
-            llm_call=_llm_caller(),
+            llm_call=caller,
         )
         if delta_records:
             final_reports.extend(delta_records)
@@ -187,7 +172,8 @@ async def run_synthesis(args):
             logger.debug(f"Skipping pair {i+1}: all correlations returned no delta")
 
     # 6. Synthesis
-    synth_data = await synthesize_deep_profile(final_reports)
+    final_reports_dicts = [r.model_dump() for r in final_reports]
+    synth_data = await synthesize_deep_profile(final_reports_dicts)
     data = synth_data.get("profile", {})
     data["attribute_confidence"] = synth_data.get("confidence", {})
     if args.name: data["name"] = args.name

@@ -8,46 +8,20 @@ import pytest
 
 from tldr_scholar.synthesize_style import (
     synthesize_deep_profile,
-    decompose_source,
-    correlate_post_to_source
 )
 
+# decompose_source and correlate_post_to_source removed (I1 dead-code cleanup).
+# Replacements: build_baselines (test_source_baseline.py), correlate_against_baselines (test_correlator.py).
+
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="decompose_source removed (I1 dead-code); see test_source_baseline.py")
 async def test_decompose_source_extracts_claims():
-    text = "The study found that A causes B. However, C had no effect."
-    mock_yaml = textwrap.dedent("""
-    - id: c1
-      claim: A causes B
-      type: finding
-    - id: c2
-      claim: C had no effect
-      type: null_result
-    """).strip()
-
-    with patch("tldr_scholar.synthesize_style.summarize_via_gemini", return_value=(mock_yaml, None)), \
-         patch("tldr_scholar.synthesize_style.ACP_AVAILABLE", True):
-        result = await decompose_source(text)
-
-    assert len(result) == 2
-    assert result[0]["id"] == "c1"
-    assert "A causes B" in result[0]["claim"]
+    pass
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="correlate_post_to_source removed (I1 dead-code); see test_correlator.py")
 async def test_correlate_post_to_source_finds_deltas():
-    statements = [{"id": "c1", "claim": "A causes B"}]
-    post_text = "I saw that A leads to B!"
-    mock_yaml = textwrap.dedent("""
-    - statement_id: c1
-      status: shared
-      intent: Direct revelation
-    """).strip()
-
-    with patch("tldr_scholar.synthesize_style.summarize_via_gemini", return_value=(mock_yaml, None)), \
-         patch("tldr_scholar.synthesize_style.ACP_AVAILABLE", True):
-        result = await correlate_post_to_source(statements, post_text)
-
-    assert len(result) == 1
-    assert result[0]["status"] == "shared"
+    pass
 
 @pytest.mark.asyncio
 async def test_synthesize_deep_profile():

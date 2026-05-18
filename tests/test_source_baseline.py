@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 import textwrap
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from tldr_scholar.source_baseline import SourceBaselines, build_baselines
+from tldr_scholar.source_baseline import build_baselines
 
 
 # ---------------------------------------------------------------------------
@@ -122,6 +122,10 @@ class TestBuildBaselinesFullMode:
         abstractive_calls = [c for c in calls if "<untrusted_content>" in c]
         assert abstractive_calls, "At least one LLM call must wrap content in <untrusted_content>"
         assert result.abstractive_summary is not None
+        # Verify the abstractive call uses tokens from NEUTRAL_SUMMARY_PROMPT
+        assert any(NEUTRAL_SUMMARY_PROMPT[:30] in c for c in abstractive_calls), (
+            "Abstractive LLM call must begin with NEUTRAL_SUMMARY_PROMPT"
+        )
 
     @pytest.mark.asyncio
     async def test_abstractive_failure_isolated(self):
