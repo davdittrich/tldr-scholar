@@ -55,16 +55,19 @@ def embed_batch(texts: list[str]) -> list[list[float]]:
 def cluster_posts(
     posts: list[str],
     seed: int | None = None,
+    min_cluster_size: int = 5,
 ) -> tuple[list[str], dict[str, list[float]]]:
     """Cluster posts into topic groups.
 
     Args:
-        posts: List of post text strings.
-        seed:  Reserved for reproducibility.  Currently a no-op: hdbscan.HDBSCAN
-               does not expose a random_state parameter in all released versions,
-               and the euclidean-metric tree path is deterministic regardless.
-               The parameter is kept so callers can pass a seed without breakage
-               when upstream support is added.
+        posts:            List of post text strings.
+        seed:             Reserved for reproducibility.  Currently a no-op: hdbscan.HDBSCAN
+                          does not expose a random_state parameter in all released versions,
+                          and the euclidean-metric tree path is deterministic regardless.
+                          The parameter is kept so callers can pass a seed without breakage
+                          when upstream support is added.
+        min_cluster_size: Minimum number of posts required to form a cluster (default 5).
+                          Forwarded to ``hdbscan.HDBSCAN(min_cluster_size=...)``.
 
     Returns:
         (labels, centroids) where:
@@ -84,7 +87,7 @@ def cluster_posts(
     try:
         import hdbscan  # type: ignore
         clusterer = hdbscan.HDBSCAN(
-            min_cluster_size=5,
+            min_cluster_size=min_cluster_size,
             min_samples=3,
             metric="euclidean",  # cosine not available for all hdbscan builds; use euclidean on normalized vecs
             core_dist_n_jobs=1,

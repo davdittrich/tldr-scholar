@@ -36,6 +36,7 @@ async def build_corpus(
     n_judge_per_topic: int = 10,
     n_manual_per_topic: int = 5,
     seed: int | None = 42,
+    min_cluster: int = 5,
 ) -> dict[str, Any]:
     """Scrape, filter, cluster, and sample a training + eval corpus.
 
@@ -47,6 +48,7 @@ async def build_corpus(
         n_judge_per_topic: LLM-judge eval holdout size per topic.
         n_manual_per_topic: Manual eval holdout size per topic.
         seed:              RNG seed for reproducible shuffles.
+        min_cluster:       Minimum posts per HDBSCAN cluster (default 5).
 
     Returns:
         ``{"training": list[SocialPost],
@@ -95,7 +97,7 @@ async def build_corpus(
     # 3. Cluster
     # ------------------------------------------------------------------
     texts = [p.text for p in filtered]
-    labels, centroids = cluster_posts(texts, seed=seed)
+    labels, centroids = cluster_posts(texts, seed=seed, min_cluster_size=min_cluster)
 
     # Map topic label → list of SocialPost (same order as filtered)
     by_topic: dict[str, list[SocialPost]] = defaultdict(list)

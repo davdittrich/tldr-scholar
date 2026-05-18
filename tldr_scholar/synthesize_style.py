@@ -12,6 +12,8 @@ CLI flags:
                         default is claims-only to minimise LLM cost
 """
 import argparse
+import hashlib
+import json
 import sys
 import asyncio
 from collections import defaultdict
@@ -42,6 +44,9 @@ try:
 except ImportError:
     summarize_via_gemini = None
     ACP_AVAILABLE = False
+
+# Per-stage corpus cache root
+CACHE_ROOT = Path.home() / ".cache" / "tldr-scholar" / "stages"
 
 # Prompts
 CLASSIFICATION_PROMPT = """\
@@ -104,6 +109,17 @@ async def run_synthesis(args):
     if not ACP_AVAILABLE:
         sys.exit(1)
 
+    # --reset: wipe this stage + all downstream caches BEFORE sampling
+    if getattr(args, "reset", None):
+        cache = CorpusCache(root=CACHE_ROOT)
+        cache.invalidate(args.reset)
+        emit_envelope(
+            level="info",
+            stage="cache",
+            code="cache_invalidated",
+            message=f"--reset={args.reset} cascaded.",
+        )
+
     async with httpx.AsyncClient(follow_redirects=True) as client:
         source_str = str(args.source)
         if ":/" in source_str and "://" not in source_str: source_str = source_str.replace(":/", "://")
@@ -125,6 +141,7 @@ async def run_synthesis(args):
             n_judge_per_topic=args.n_judge_per_topic,
             n_manual_per_topic=args.n_manual_per_topic,
             seed=42,
+            min_cluster=getattr(args, "min_cluster", 5),
         )
         sampled_posts: list[SocialPost] = corpus_result["training"]
         training_topic_labels: list[str] = corpus_result.get("training_topic_labels", [])
@@ -311,6 +328,20 @@ def main():
     parser.add_argument("--skip-links", action="store_true", help="Skip article ingestion; use post bodies only.")
     parser.add_argument("--full-baselines", dest="full_baselines", action="store_true", default=False,
                         help="Run all 3 baselines (claims+extractive+abstractive). Default: claims only.")
+    parser.add_argument(
+        "--reset",
+        choices=["cluster", "correlate", "aggregate", "all"],
+        default=None,
+        dest="reset",
+        help="Wipe this stage and all downstream caches before running.",
+    )
+    parser.add_argument(
+        "--min-cluster",
+        dest="min_cluster",
+        type=int,
+        default=5,
+        help="Minimum posts per HDBSCAN cluster (default: 5).",
+    )
     args = parser.parse_args()
     asyncio.run(run_synthesis(args))
 
