@@ -184,12 +184,17 @@ async def run_synthesis(args):
         logger.info(f"Sampled {len(sampled_posts)} posts balanced across domains (success preferred).")
 
         # 4. Ingest Links for samples
-        ingester = LinkIngester(concurrency=args.concurrency)
-        pairs = await ingester.process_posts(sampled_posts)
         corpus = []
-        for post, article in pairs:
-            source = article if article else post.text
-            corpus.append((source, post.text))
+        if args.skip_links:
+            logger.info("--skip-links set: skipping article ingestion, using post bodies only")
+            for post in sampled_posts:
+                corpus.append((post.text, post.text))
+        else:
+            ingester = LinkIngester(concurrency=args.concurrency)
+            pairs = await ingester.process_posts(sampled_posts)
+            for post, article in pairs:
+                source = article if article else post.text
+                corpus.append((source, post.text))
 
     # 5. Atomic Pipeline
     final_reports = []
@@ -225,6 +230,7 @@ def main():
     parser.add_argument("--months", type=int, default=12)
     parser.add_argument("--max-posts", type=int, default=200)
     parser.add_argument("--concurrency", type=int, default=5)
+    parser.add_argument("--skip-links", action="store_true", help="Skip article ingestion; use post bodies only.")
     args = parser.parse_args()
     asyncio.run(run_synthesis(args))
 
