@@ -11,6 +11,7 @@ import httpx
 from loguru import logger
 
 from tldr_scholar.config import DEFAULT_PERSONA_DIR
+from tldr_scholar.corpus_cache import CorpusCache
 from tldr_scholar.ingest import ingest
 from tldr_scholar.scrapers import ScraperFactory, SocialPost, UnknownURLError
 from tldr_scholar.ingestion_engine import LinkIngester
@@ -130,9 +131,17 @@ async def run_synthesis(args):
             logger.error(f"URL not supported: {e}")
             sys.exit(1)
 
-        # 1. Fetch ALL posts from 12 months
-        logger.info(f"Scraping all posts from past 12 months...")
-        all_posts = await scraper.scrape(source_str, limit_months=args.months, max_posts=1000)
+        # 1. Fetch ALL posts from 12 months (cache-backed)
+        corpus_cache = CorpusCache()
+        cached = corpus_cache.get(source_str, args.months)
+        if cached is not None:
+            logger.info(f"CorpusCache HIT: using {len(cached)} cached posts for {source_str}")
+            all_posts = cached
+        else:
+            logger.info(f"Scraping all posts from past {args.months} months...")
+            all_posts = await scraper.scrape(source_str, limit_months=args.months, max_posts=1000)
+            if all_posts:
+                corpus_cache.put(source_str, args.months, all_posts)
         if not all_posts:
             logger.error("No posts found.")
             sys.exit(1)
