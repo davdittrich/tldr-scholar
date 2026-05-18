@@ -107,7 +107,13 @@ async def run_synthesis(args):
     check_embedding_model_cached()
 
     if not ACP_AVAILABLE:
-        sys.exit(1)
+        emit_envelope(
+            level="error",
+            stage="startup",
+            code="acp_unavailable",
+            message="gemini_acp module unavailable; install gemini-acp package",
+        )
+        sys.exit(EXIT_CODES["internal"])
 
     # Stage cache — always initialised so write-through works on every run.
     cache = CorpusCache(root=CACHE_ROOT)

@@ -540,3 +540,43 @@ class TestStageBoundaryExceptionNarrowing:
             )
             assert any(e["code"] == "llm_exhausted" and e["stage"] == "aggregate_global"
                        for e in emitted), f"llm_exhausted envelope not emitted; got {emitted}"
+
+
+# ---------------------------------------------------------------------------
+# B3 regression: ACP_AVAILABLE=False must emit envelope before sys.exit
+# ---------------------------------------------------------------------------
+
+class TestAcpUnavailableEmitsEnvelope:
+    """B3: when gemini_acp is not installed, emit error envelope before exit."""
+
+    @pytest.mark.asyncio
+    async def test_acp_unavailable_emits_envelope_then_exits(self, monkeypatch, capsys):
+        """When ACP_AVAILABLE is False, emit_envelope fires BEFORE SystemExit."""
+        import argparse
+        import asyncio
+        import tldr_scholar.synthesize_style as ss
+
+        monkeypatch.setattr(ss, "ACP_AVAILABLE", False)
+
+        args = argparse.Namespace(
+            src="https://mastodon.social/@example",
+            name="test_persona",
+            full_baselines=False,
+            reset=None,
+            window_months=12,
+            n_train=200,
+            n_judge_per_topic=10,
+            n_manual_per_topic=5,
+            min_cluster=5,
+            months=12,
+            max_posts=200,
+            concurrency=5,
+            skip_links=True,
+        )
+
+        with pytest.raises(SystemExit) as exc:
+            await ss.run_synthesis(args)
+
+        assert exc.value.code == 1
+        captured = capsys.readouterr()
+        assert '"code": "acp_unavailable"' in captured.err
