@@ -19,11 +19,12 @@ dependencies = [
     "PyMuPDF",
     "pymupdf4llm",
     "curl-cffi>=0.7",
+    "rich>=13",
     "gemini-acp @ git+https://github.com/davdittrich/gemini-acp.git",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-cov>=5.0", "respx>=0.21"]
+dev = ["pytest>=8.0", "pytest-cov>=5.0", "respx>=0.21", "pytest-asyncio>=0.21"]
 
 [project.scripts]
 tldr-scholar = "tldr_scholar.cli:app"
@@ -33,3 +34,4 @@ tldr-scholar-refine-persona = "tldr_scholar.refine_persona:main"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short --strict-markers"
+asyncio_mode = "auto"
