@@ -321,12 +321,13 @@ async def run_synthesis(args):
     else:
         # Build TopicProfile per topic
         topics: dict[str, TopicProfile] = {}
+        topic_ok: list[bool] = []
         try:
             for tlabel in set(list(topic_to_deltas.keys()) + list(topic_to_posts.keys())):
                 centroid = topic_centroids.get(tlabel, [])
                 posts_for_topic = list(topic_to_posts.get(tlabel, []))
                 deltas_for_topic = list(topic_to_deltas.get(tlabel, []))
-                tp = await aggregate_topic(
+                tp, ok = await aggregate_topic(
                     label=tlabel,
                     centroid=centroid,
                     posts=posts_for_topic,
@@ -334,6 +335,7 @@ async def run_synthesis(args):
                     llm_call=caller,
                 )
                 topics[tlabel] = tp
+                topic_ok.append(ok)
         except Exception:  # stage boundary: LLM API exhaustion
             incomplete_stages.append("aggregate_topic")
             partial = Persona(
@@ -355,6 +357,11 @@ async def run_synthesis(args):
             )
             emit_drop_summary()
             sys.exit(EXIT_CODES["llm_exhausted"])
+
+        # Propagate per-topic failures to persona status (tldr-scholar-58f.5).
+        # aggregate_topic returns (TopicProfile, bool); False means degraded/fallback.
+        if topic_ok and not all(topic_ok):
+            incomplete_stages.append("aggregate_topic_partial")
 
         # If no topics at all, create a _global fallback so Persona.topics is non-empty
         if not topics:
@@ -399,7 +406,8 @@ async def run_synthesis(args):
     persona = Persona(
         name=persona_name,
         embedding_model=EMBEDDING_MODEL_NAME,
-        status="complete",
+        status="incomplete" if incomplete_stages else "complete",
+        incomplete_stages=incomplete_stages,
         topics=topics,
         agenda=global_fields.get("agenda", ""),
         worldview=global_fields.get("worldview", ""),

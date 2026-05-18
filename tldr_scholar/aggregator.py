@@ -1,6 +1,6 @@
 """Per-topic and global aggregation for the NWL persona pipeline (WU-4).
 
-aggregate_topic : 1 Gemini call per topic cluster → TopicProfile
+aggregate_topic : 1 Gemini call per topic cluster → tuple[TopicProfile, bool]
 aggregate_global: re-uses DEEP_SYNTHESIS_PROMPT over all DeltaRecords → top-level Persona fields
 """
 from __future__ import annotations
@@ -49,7 +49,7 @@ async def aggregate_topic(
     posts: list[str],
     deltas: list[DeltaRecord],
     llm_call: LLMCaller,
-) -> TopicProfile:
+) -> tuple[TopicProfile, bool]:
     """Build one TopicProfile for *label*.
 
     The ``posts`` field is always populated from the *posts* argument,
@@ -66,7 +66,9 @@ async def aggregate_topic(
 
     Returns
     -------
-    TopicProfile with posts always populated.
+    tuple[TopicProfile, bool]
+        TopicProfile with posts always populated; bool is True on LLM success,
+        False on LLM failure or JSON parse failure (degraded/fallback result).
     """
     sample_size = len(posts)
 
@@ -79,8 +81,8 @@ async def aggregate_topic(
     )
 
     if not deltas:
-        # Nothing to aggregate; return base with empty LLM fields.
-        return TopicProfile(**base)
+        # Nothing to aggregate; return base with empty LLM fields (no failure).
+        return TopicProfile(**base), True
 
     delta_records_json = json.dumps(
         [d.model_dump() for d in deltas], ensure_ascii=False
@@ -92,13 +94,13 @@ async def aggregate_topic(
     except Exception as exc:
         logger.warning("aggregator: topic=%s LLM call failed — %s", label, exc)
         _emit_topic_fail(label, str(exc))
-        return TopicProfile(**base)
+        return TopicProfile(**base), False
 
     result = _parse_aggregation_result(raw)
     if result is None:
         logger.warning("aggregator: topic=%s JSON parse failed", label)
         _emit_topic_fail(label, "JSON parse failed")
-        return TopicProfile(**base)
+        return TopicProfile(**base), False
 
     return TopicProfile(
         **base,
@@ -107,7 +109,7 @@ async def aggregate_topic(
         substantive_anchors=result.substantive_anchors,
         rhetorical_strategy=result.rhetorical_strategy,
         confidence=result.confidence,
-    )
+    ), True
 
 
 def _parse_aggregation_result(raw: Any) -> TopicAggregationResult | None:

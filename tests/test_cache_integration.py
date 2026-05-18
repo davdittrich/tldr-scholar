@@ -138,7 +138,7 @@ def _make_patches(
         ),
         patch(
             "tldr_scholar.synthesize_style.aggregate_topic",
-            new=AsyncMock(return_value=topic_profile),
+            new=AsyncMock(return_value=(topic_profile, True)),
         ),
         patch(
             "tldr_scholar.synthesize_style.aggregate_global",
@@ -225,7 +225,7 @@ async def test_cache_hit_skips_lllm_stages(tmp_path):
 
     bc1 = AsyncMock(return_value=_make_corpus_result())
     corr1 = AsyncMock(return_value=[_fake_delta()])
-    at1 = AsyncMock(return_value=_fake_topic_profile())
+    at1 = AsyncMock(return_value=(_fake_topic_profile(), True))
     ag1 = AsyncMock(return_value={"agenda": "a", "worldview": "w", "pivot_logic": "", "identifiable_nuances": []})
 
     await _run_once(bc1, corr1, at1, ag1)
@@ -233,7 +233,7 @@ async def test_cache_hit_skips_lllm_stages(tmp_path):
     # Second run with fresh mocks — call counts should remain 0 for cached stages
     bc2 = AsyncMock(return_value=_make_corpus_result())
     corr2 = AsyncMock(return_value=[_fake_delta()])
-    at2 = AsyncMock(return_value=_fake_topic_profile())
+    at2 = AsyncMock(return_value=(_fake_topic_profile(), True))
     ag2 = AsyncMock(return_value={"agenda": "a", "worldview": "w", "pivot_logic": "", "identifiable_nuances": []})
 
     await _run_once(bc2, corr2, at2, ag2)
@@ -289,14 +289,14 @@ async def test_reset_aggregate_only_reruns_aggregate(tmp_path):
         _make_args(),
         AsyncMock(return_value=_make_corpus_result()),
         AsyncMock(return_value=[_fake_delta()]),
-        AsyncMock(return_value=_fake_topic_profile()),
+        AsyncMock(return_value=(_fake_topic_profile(), True)),
         AsyncMock(return_value=gf),
     )
 
     # Second run with --reset=aggregate
     bc2 = AsyncMock(return_value=_make_corpus_result())
     corr2 = AsyncMock(return_value=[_fake_delta()])
-    at2 = AsyncMock(return_value=_fake_topic_profile())
+    at2 = AsyncMock(return_value=(_fake_topic_profile(), True))
     ag2 = AsyncMock(return_value=gf)
     await _run_once(_make_args(reset="aggregate"), bc2, corr2, at2, ag2)
 
@@ -348,14 +348,14 @@ async def test_reset_cluster_reruns_all_stages(tmp_path):
         _make_args(),
         AsyncMock(return_value=_make_corpus_result()),
         AsyncMock(return_value=[_fake_delta()]),
-        AsyncMock(return_value=_fake_topic_profile()),
+        AsyncMock(return_value=(_fake_topic_profile(), True)),
         AsyncMock(return_value=gf),
     )
 
     # Second run with --reset=cluster
     bc2 = AsyncMock(return_value=_make_corpus_result())
     corr2 = AsyncMock(return_value=[_fake_delta()])
-    at2 = AsyncMock(return_value=_fake_topic_profile())
+    at2 = AsyncMock(return_value=(_fake_topic_profile(), True))
     ag2 = AsyncMock(return_value=gf)
     await _run_once(_make_args(reset="cluster"), bc2, corr2, at2, ag2)
 
@@ -407,14 +407,14 @@ async def test_different_min_cluster_causes_cluster_cache_miss(tmp_path):
         _make_args(min_cluster=5),
         AsyncMock(return_value=_make_corpus_result()),
         AsyncMock(return_value=[_fake_delta()]),
-        AsyncMock(return_value=_fake_topic_profile()),
+        AsyncMock(return_value=(_fake_topic_profile(), True)),
         AsyncMock(return_value=gf),
     )
 
     # Second run with min_cluster=10 — no --reset but flag changed
     bc2 = AsyncMock(return_value=_make_corpus_result())
     corr2 = AsyncMock(return_value=[_fake_delta()])
-    at2 = AsyncMock(return_value=_fake_topic_profile())
+    at2 = AsyncMock(return_value=(_fake_topic_profile(), True))
     ag2 = AsyncMock(return_value=gf)
     await _run_once(_make_args(min_cluster=10), bc2, corr2, at2, ag2)
 

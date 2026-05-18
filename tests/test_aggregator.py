@@ -109,7 +109,7 @@ class TestAggregateTopicPostsField:
     async def test_posts_populated_on_success(self):
         posts = ["post A", "post B", "post C"]
         llm_mock = AsyncMock(return_value=_valid_aggregation_json())
-        tp = await aggregate_topic(
+        tp, _ = await aggregate_topic(
             label="tech",
             centroid=[0.0] * 4,
             posts=posts,
@@ -125,7 +125,7 @@ class TestAggregateTopicPostsField:
 
         stderr_capture = io.StringIO()
         with patch("sys.stderr", stderr_capture):
-            tp = await aggregate_topic(
+            tp, _ = await aggregate_topic(
                 label="tech",
                 centroid=[0.0],
                 posts=posts,
@@ -146,7 +146,7 @@ class TestAggregateTopicPostsField:
 
         stderr_capture = io.StringIO()
         with patch("sys.stderr", stderr_capture):
-            tp = await aggregate_topic(
+            tp, _ = await aggregate_topic(
                 label="misc",
                 centroid=[],
                 posts=posts,
@@ -218,7 +218,7 @@ class TestAggregateTopicResultMapping:
     async def test_result_mapped_to_topic_profile(self):
         posts = ["tech post 1"]
         llm_mock = AsyncMock(return_value=_valid_aggregation_json())
-        tp = await aggregate_topic(
+        tp, _ = await aggregate_topic(
             label="technology",
             centroid=[1.0, 2.0],
             posts=posts,
@@ -240,7 +240,7 @@ class TestAggregateTopicResultMapping:
         """JSON wrapped in ```json...``` fences is parsed correctly."""
         fenced = "```json\n" + _valid_aggregation_json() + "\n```"
         llm_mock = AsyncMock(return_value=fenced)
-        tp = await aggregate_topic(
+        tp, _ = await aggregate_topic(
             label="tech",
             centroid=[],
             posts=["post"],
@@ -273,7 +273,7 @@ class TestAggregateTopicNoDeltas:
     @pytest.mark.asyncio
     async def test_no_llm_call_when_no_deltas(self):
         llm_mock = AsyncMock()
-        tp = await aggregate_topic(
+        tp, _ = await aggregate_topic(
             label="empty_topic",
             centroid=[0.5],
             posts=["some post"],
@@ -464,3 +464,81 @@ class TestTopicAggregationPrompt:
             "confidence",
         ]:
             assert field in TOPIC_AGGREGATION_PROMPT
+
+
+# ---------------------------------------------------------------------------
+# aggregate_topic — tuple return (tldr-scholar-58f.5)
+# ---------------------------------------------------------------------------
+
+
+class TestAggregateTopicTupleReturn:
+    """aggregate_topic must return (TopicProfile, bool) — True on success, False on failure."""
+
+    @pytest.mark.asyncio
+    async def test_returns_true_on_success(self):
+        """Valid LLM response → (TopicProfile, True)."""
+        llm_mock = AsyncMock(return_value=_valid_aggregation_json())
+        result = await aggregate_topic(
+            label="tech",
+            centroid=[0.1, 0.2],
+            posts=["post A"],
+            deltas=[_make_delta()],
+            llm_call=llm_mock,
+        )
+        assert isinstance(result, tuple), "aggregate_topic must return a 2-tuple"
+        tp, ok = result
+        assert isinstance(tp, TopicProfile)
+        assert ok is True
+
+    @pytest.mark.asyncio
+    async def test_returns_false_on_llm_failure(self):
+        """LLM raises → (TopicProfile, False) with posts still populated."""
+        llm_mock = AsyncMock(side_effect=RuntimeError("network error"))
+        stderr_capture = io.StringIO()
+        with patch("sys.stderr", stderr_capture):
+            result = await aggregate_topic(
+                label="economics",
+                centroid=[0.0],
+                posts=["post X"],
+                deltas=[_make_delta()],
+                llm_call=llm_mock,
+            )
+        assert isinstance(result, tuple), "aggregate_topic must return a 2-tuple"
+        tp, ok = result
+        assert isinstance(tp, TopicProfile)
+        assert ok is False
+        assert tp.posts == ["post X"], "posts must survive LLM failure"
+
+    @pytest.mark.asyncio
+    async def test_returns_false_on_parse_failure(self):
+        """Malformed LLM JSON response → (TopicProfile, False)."""
+        llm_mock = AsyncMock(return_value="not json at all {{{")
+        stderr_capture = io.StringIO()
+        with patch("sys.stderr", stderr_capture):
+            result = await aggregate_topic(
+                label="policy",
+                centroid=[],
+                posts=["some post"],
+                deltas=[_make_delta()],
+                llm_call=llm_mock,
+            )
+        assert isinstance(result, tuple)
+        tp, ok = result
+        assert ok is False
+        assert tp.revelation_priorities == []
+
+    @pytest.mark.asyncio
+    async def test_returns_true_on_empty_deltas(self):
+        """No deltas → base profile returned with True (no LLM call = no failure)."""
+        llm_mock = AsyncMock()
+        result = await aggregate_topic(
+            label="empty_topic",
+            centroid=[0.5],
+            posts=["some post"],
+            deltas=[],
+            llm_call=llm_mock,
+        )
+        assert isinstance(result, tuple)
+        tp, ok = result
+        assert ok is True
+        assert tp.posts == ["some post"]
