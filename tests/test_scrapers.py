@@ -18,3 +18,16 @@ def test_mastodon_html_strip():
     scraper = MastodonScraper(None)
     html = "<p>Hello <b>World</b></p>"
     assert scraper._strip_html(html) == "Hello World"
+
+def test_is_substantive_rejects_unknown_domain():
+    from tldr_scholar.ingestion_engine import LinkIngester
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as tmp:
+        ingester = LinkIngester(cache_dir=Path(tmp))
+        # Generic domain not in any whitelist (no edu/gov/org TLD, no news/blog/article/journal/paper substring)
+        assert ingester.is_substantive("https://random-site.example.com/post/123") is False
+        # Known substantive (depends on SUBSTANTIVE_TLDS/PATTERNS — likely .edu)
+        assert ingester.is_substantive("https://example.edu/paper") is True
+        # Social loop excluded
+        assert ingester.is_substantive("https://mastodon.example/@user") is False

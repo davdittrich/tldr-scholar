@@ -45,8 +45,9 @@ class LinkIngester:
         # Default: lean permissive for academic domains but skip known trackers/media
         if any(x in netloc for x in ["youtube.com", "imgur.com", "giphy.com"]):
             return False
-            
-        return True
+
+        logger.debug(f"is_substantive rejected (no whitelist match): {url}")
+        return False
 
     async def fetch_article(self, url: str) -> Optional[str]:
         """Fetch and cache article content."""
