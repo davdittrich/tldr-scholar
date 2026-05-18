@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import sys
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -11,9 +9,6 @@ import pytest
 def _build_parser():
     """Import and return a fresh ArgumentParser from synthesize_style.main."""
     # We reconstruct the same parser used in main() to avoid importing side-effects.
-    import importlib
-    import tldr_scholar.synthesize_style as ss
-
     parser = argparse.ArgumentParser()
     parser.add_argument("source")
     parser.add_argument("--name")
