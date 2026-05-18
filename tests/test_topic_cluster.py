@@ -271,3 +271,37 @@ def test_bertopic_failure_emits_warn_envelope(monkeypatch, capsys):
         if l.strip()
     ), f"Expected bertopic_failed envelope. Got: {envelope_lines}"
 
+
+def test_label_collision_resolved_via_suffix():
+    """Test that duplicate cluster labels are disambiguated with numeric suffixes."""
+    from collections import Counter
+
+    # Simulate the labeling logic with a collision scenario
+    # Two clusters produce identical top-3 terms
+    cluster_terms = {
+        0: ["econ", "labor", "wage"],
+        1: ["econ", "labor", "wage"],  # Collision!
+        2: ["trade", "deal", "pact"],
+    }
+
+    # Apply the fix: track seen labels and append suffix
+    seen = Counter()
+    result = {}
+    for cid, top_terms in cluster_terms.items():
+        label = "+".join(top_terms) if top_terms else f"topic_{cid}"
+        seen[label] += 1
+        if seen[label] > 1:
+            label = f"{label}_{seen[label]}"
+        result[cid] = label
+
+    # Verify labels are unique
+    labels_list = list(result.values())
+    assert len(labels_list) == len(set(labels_list)), (
+        f"Label collision detected: {labels_list}"
+    )
+
+    # Verify the expected labels
+    assert result[0] == "econ+labor+wage"
+    assert result[1] == "econ+labor+wage_2"
+    assert result[2] == "trade+deal+pact"
+

@@ -170,6 +170,7 @@ def _label_clusters(
     """Use bertopic c-TF-IDF to label each cluster with top-3 terms."""
     from bertopic.vectorizers import ClassTfidfTransformer  # type: ignore
     from sklearn.feature_extraction.text import CountVectorizer  # type: ignore
+    from collections import Counter  # type: ignore
 
     # Build document-per-cluster representation
     docs_per_cluster: dict[int, list[str]] = {cid: [] for cid in unique_ids}
@@ -188,11 +189,15 @@ def _label_clusters(
 
     vocab = vectorizer.get_feature_names_out()
     result: dict[int, str] = {}
+    seen: "Counter[str]" = Counter()  # type: ignore
     for idx, cid in enumerate(unique_ids):
         row = ctfidf_matrix[idx].toarray().flatten()
         top_idxs = row.argsort()[::-1][:3]
         top_terms = [vocab[j] for j in top_idxs if row[j] > 0]
         label = "+".join(top_terms) if top_terms else f"topic_{cid}"
+        seen[label] += 1
+        if seen[label] > 1:
+            label = f"{label}_{seen[label]}"
         result[cid] = label
 
     return result
