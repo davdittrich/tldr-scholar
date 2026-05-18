@@ -117,14 +117,28 @@ async def build_corpus(
         shuffled = list(posts)
         rng.shuffle(shuffled)
 
-        # Eval slices come first so they are never in the training pool.
-        judge_slice = shuffled[:n_judge_per_topic]
-        manual_slice = shuffled[n_judge_per_topic: n_judge_per_topic + n_manual_per_topic]
-        remainder = shuffled[n_judge_per_topic + n_manual_per_topic:]
+        # Policy: skip eval entirely for tiny topics (simplest + defensible).
+        # All posts go to training pool; emit warn envelope.
+        if len(shuffled) < n_judge_per_topic + n_manual_per_topic:
+            emit(
+                level="warn",
+                stage="sampler",
+                code="topic_too_small_for_eval",
+                message=f"topic '{topic}' has {len(shuffled)} posts < n_judge+n_manual={n_judge_per_topic + n_manual_per_topic}; eval skipped, all posts → training",
+                drops=[{"source": topic, "reason": f"only_{len(shuffled)}_posts"}],
+            )
+            eval_judge[topic] = []
+            eval_manual[topic] = []
+            training_pool[topic] = shuffled
+        else:
+            # Eval slices come first so they are never in the training pool.
+            judge_slice = shuffled[:n_judge_per_topic]
+            manual_slice = shuffled[n_judge_per_topic: n_judge_per_topic + n_manual_per_topic]
+            remainder = shuffled[n_judge_per_topic + n_manual_per_topic:]
 
-        eval_judge[topic] = judge_slice
-        eval_manual[topic] = manual_slice
-        training_pool[topic] = remainder
+            eval_judge[topic] = judge_slice
+            eval_manual[topic] = manual_slice
+            training_pool[topic] = remainder
 
     # ------------------------------------------------------------------
     # 5. Topic-balanced training sample

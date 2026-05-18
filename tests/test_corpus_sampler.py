@@ -430,3 +430,57 @@ async def test_proportional_fallback_small_corpus():
     manual_urls = {p.source_url for ps in result["eval_manual"].values() for p in ps}
     assert training_urls.isdisjoint(judge_urls)
     assert training_urls.isdisjoint(manual_urls)
+
+
+# ---------------------------------------------------------------------------
+# 9. Tiny topic (fewer posts than n_judge + n_manual) → warn + skip eval
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_tiny_topic_emits_warn_and_skips_eval(capsys):
+    """When a topic has fewer posts than n_judge+n_manual, eval is skipped for that topic.
+
+    All posts from the tiny topic go to training pool.
+    A warning envelope with code='topic_too_small_for_eval' is emitted.
+    """
+    # Create corpus: 3 posts in topic 'small', 20 posts in topic 'large'
+    # With defaults n_judge=10, n_manual=5, topic 'small' (3 posts) is too tiny
+    topic_counts = {"small": 3, "large": 20}
+    posts, labels = _multi_topic_posts(topic_counts)
+    scraper = _fake_scraper(posts)
+
+    # Mock centroids
+    centroids = {t: [0.1] * 384 for t in topic_counts}
+
+    with (
+        patch("tldr_scholar.corpus_sampler.cluster_posts", return_value=(labels, centroids)),
+        patch("tldr_scholar.corpus_sampler.is_likely_injection", return_value=False),
+    ):
+        from tldr_scholar.corpus_sampler import build_corpus
+
+        result = await build_corpus(
+            scraper=scraper,
+            source_url="https://bsky.app/profile/test.bsky.social",
+            window_months=12,
+            n_train=15,  # request 15 training posts total
+            n_judge_per_topic=10,  # tiny topic can't provide 10
+            n_manual_per_topic=5,  # tiny topic can't provide 5 either
+            seed=42,
+        )
+
+        # Assert: eval_judge and eval_manual for 'small' topic are empty
+        assert result["eval_judge"]["small"] == [], "eval_judge['small'] should be empty for tiny topic"
+        assert result["eval_manual"]["small"] == [], "eval_manual['small'] should be empty for tiny topic"
+
+        # Assert: all 3 'small' posts went to training
+        small_posts_in_training = [
+            p for p in result["training"]
+            if "small" in p.text
+        ]
+        assert len(small_posts_in_training) == 3, f"Expected 3 'small' posts in training, got {len(small_posts_in_training)}"
+
+        # Assert: warn envelope was emitted on stderr
+        captured = capsys.readouterr()
+        assert "topic_too_small_for_eval" in captured.err, "Expected warn envelope with code='topic_too_small_for_eval' in stderr"
+        assert "small" in captured.err, "Expected topic label 'small' in the warning message"
+        assert "3 posts" in captured.err, "Expected post count in the warning message"
