@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Protocol, runtime_checkable
@@ -10,6 +11,13 @@ from urllib.parse import urlparse
 import httpx
 from loguru import logger
 from pydantic import BaseModel, Field
+
+
+def _backoff_delay(attempt: int, retry_after: Optional[float] = None) -> float:
+    """Exponential backoff with jitter. Honors Retry-After if provided."""
+    if retry_after is not None and retry_after > 0:
+        return min(retry_after, 60.0) + random.uniform(0, 1.0)
+    return min(1.0 * (2 ** attempt), 60.0) + random.uniform(0, 1.0)
 
 
 class SocialPost(BaseModel):
@@ -40,8 +48,10 @@ class MastodonScraper:
             try:
                 resp = await self.client.get(url, timeout=15)
                 if resp.status_code == 429:
-                    wait = (i + 1) * 2
-                    logger.warning(f"Rate limited (429). Retrying in {wait}s...")
+                    retry_after_hdr = resp.headers.get("Retry-After")
+                    retry_after = float(retry_after_hdr) if retry_after_hdr and retry_after_hdr.replace('.','',1).isdigit() else None
+                    wait = _backoff_delay(i, retry_after=retry_after)
+                    logger.warning(f"Rate limited (429). Retrying in {wait:.2f}s (attempt {i+1}/{retries})...")
                     await asyncio.sleep(wait)
                     continue
                 resp.raise_for_status()
@@ -49,7 +59,7 @@ class MastodonScraper:
             except (httpx.HTTPError, httpx.TimeoutException) as e:
                 if i == retries - 1:
                     raise
-                await asyncio.sleep(1)
+                await asyncio.sleep(_backoff_delay(i))
         raise Exception(f"Failed to fetch {url} after {retries} retries")
 
     def _strip_html(self, html: str) -> str:
