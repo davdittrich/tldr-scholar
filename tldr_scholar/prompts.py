@@ -10,6 +10,41 @@ from tldr_scholar.personas import PersonaManager
 if TYPE_CHECKING:
     pass
 
+# ---------------------------------------------------------------------------
+# Relocated from synthesize_style.py — delta pipeline prompts
+# ---------------------------------------------------------------------------
+
+DECOMPOSITION_PROMPT = """\
+Analyze the following text and decompose it into a list of atomic statements.
+
+Text:
+{text}
+
+Return ONLY a YAML list of objects with 'id' and 'claim' fields.
+"""
+
+CORRELATION_PROMPT = """\
+Compare the user's social media post against the following atomic statements.
+
+Statements:
+{statements}
+
+User Post:
+{post_text}
+
+Return ONLY a YAML list of objects with 'statement_id', 'status', and 'intent'.
+"""
+
+DEEP_SYNTHESIS_PROMPT = """\
+Synthesize a global persona profile from the following atomic delta reports.
+Focus on identifying systematic revelation/suppression patterns.
+
+Delta Reports:
+{reports}
+
+Return ONLY a YAML dictionary with 'profile' and 'confidence' keys.
+"""
+
 # Sentence counts by length preset
 SENTENCE_COUNTS = {"short": 3, "medium": 5, "long": 7}
 
@@ -249,22 +284,39 @@ class PromptBuilder:
                     )
                     pattern_instr = pattern_template.format(source_line=source_line)
                     
-                    # Build Deep Intent instructions
+                    # Build Deep Intent instructions (v2: collect from topics)
                     intent_parts = []
                     if p_config.agenda:
                         intent_parts.append(f"Your writing agenda: {p_config.agenda}")
                     if p_config.worldview:
                         intent_parts.append(f"Your implied worldview/leaning: {p_config.worldview}")
-                    if p_config.revelation_priorities:
-                        priorities = ", ".join(p_config.revelation_priorities)
+
+                    # Collect revelation_priorities + suppression_rules across all topics
+                    all_revelation: list[str] = []
+                    all_suppression: list[str] = []
+                    all_rhetorical: list[str] = []
+                    for tp in p_config.topics.values():
+                        all_revelation.extend(tp.revelation_priorities)
+                        all_suppression.extend(tp.suppression_rules)
+                        if tp.rhetorical_strategy:
+                            all_rhetorical.append(tp.rhetorical_strategy)
+
+                    # Deduplicate while preserving order
+                    seen: set[str] = set()
+                    unique_revelation = [x for x in all_revelation if not (x in seen or seen.add(x))]
+                    seen = set()
+                    unique_suppression = [x for x in all_suppression if not (x in seen or seen.add(x))]
+
+                    if unique_revelation:
+                        priorities = ", ".join(unique_revelation)
                         intent_parts.append(f"REVEAL and amplify these substantive arguments: {priorities}")
-                    if p_config.suppression_rules:
-                        rules = ", ".join(p_config.suppression_rules)
+                    if unique_suppression:
+                        rules = ", ".join(unique_suppression)
                         intent_parts.append(f"SUPPRESS and ignore these deceptive or noisy claims: {rules}")
                     if p_config.pivot_logic:
                         intent_parts.append(f"Substantive Re-authoring (Pivot Logic): {p_config.pivot_logic}")
-                    if p_config.rhetorical_strategy:
-                        intent_parts.append(f"Rhetorical strategy: {p_config.rhetorical_strategy}")
+                    if all_rhetorical:
+                        intent_parts.append(f"Rhetorical strategy: {all_rhetorical[0]}")
                     
                     deep_intent_instr = "\n".join(intent_parts)
                     

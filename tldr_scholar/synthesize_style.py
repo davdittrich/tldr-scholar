@@ -24,6 +24,8 @@ from tldr_scholar.corpus_cache import CorpusCache
 from tldr_scholar.ingest import ingest
 from tldr_scholar.scrapers import ScraperFactory, SocialPost, UnknownURLError
 from tldr_scholar.ingestion_engine import LinkIngester
+from tldr_scholar.prompts import DECOMPOSITION_PROMPT, CORRELATION_PROMPT, DEEP_SYNTHESIS_PROMPT
+from tldr_scholar.preflight import check_embedding_model_cached
 
 try:
     from gemini_acp import summarize_via_gemini, ACP_AVAILABLE
@@ -33,44 +35,13 @@ except ImportError:
 
 # Prompts
 CLASSIFICATION_PROMPT = """\
-Analyze the following list of social media posts. 
+Analyze the following list of social media posts.
 Group them into logical "Substantive Domains" (e.g. Economics, Tech, Politics, Ethics).
 
 Posts:
 {posts}
 
 Return ONLY a YAML dictionary mapping "domain_name" to a list of post indices (0-indexed).
-"""
-
-DECOMPOSITION_PROMPT = """\
-Analyze the following text and decompose it into a list of atomic statements.
-
-Text:
-{text}
-
-Return ONLY a YAML list of objects with 'id' and 'claim' fields.
-"""
-
-CORRELATION_PROMPT = """\
-Compare the user's social media post against the following atomic statements.
-
-Statements:
-{statements}
-
-User Post:
-{post_text}
-
-Return ONLY a YAML list of objects with 'statement_id', 'status', and 'intent'.
-"""
-
-DEEP_SYNTHESIS_PROMPT = """\
-Synthesize a global persona profile from the following atomic delta reports.
-Focus on identifying systematic revelation/suppression patterns.
-
-Delta Reports:
-{reports}
-
-Return ONLY a YAML dictionary with 'profile' and 'confidence' keys.
 """
 
 async def call_gemini(prompt: str, label: str) -> Any:
@@ -126,6 +97,9 @@ async def synthesize_deep_profile(reports: list[list[dict]]) -> dict:
     return data if isinstance(data, dict) else {}
 
 async def run_synthesis(args):
+    # Pre-flight: warn if embedding model not cached (non-fatal)
+    check_embedding_model_cached()
+
     if not ACP_AVAILABLE:
         sys.exit(1)
 

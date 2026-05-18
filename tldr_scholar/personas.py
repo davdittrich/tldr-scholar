@@ -1,37 +1,76 @@
-"""Dynamic persona management for tldr-scholar."""
+"""Dynamic persona management for tldr-scholar (v2 schema)."""
 from __future__ import annotations
 
-import os
+import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Literal
 
 import yaml
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from tldr_scholar.config import DEFAULT_PERSONA_DIR
 
 
-class Persona(BaseModel):
-    """Configuration for a specific writing style persona."""
-    name: str
-    role: str
-    tone: str
-    structure_pattern: str
-    hashtag_style: str = "lowercase"  # "lowercase" or "pascal"
-    
-    # Cognitive Architecture (Deep Persona)
-    agenda: Optional[str] = None
-    worldview: Optional[str] = None
+# ---------------------------------------------------------------------------
+# Pydantic v2 models
+# ---------------------------------------------------------------------------
+
+class TopicProfile(BaseModel):
+    """Per-topic emphasis profile derived from clustered post deltas."""
+    label: str
+    centroid: list[float]
+    sample_size: int
+    posts: list[str] = Field(default_factory=list)
     revelation_priorities: list[str] = Field(default_factory=list)
     suppression_rules: list[str] = Field(default_factory=list)
     substantive_anchors: list[str] = Field(default_factory=list)
-    pivot_logic: Optional[str] = None
-    rhetorical_strategy: Optional[str] = None
+    rhetorical_strategy: str = ""
+    confidence: dict[str, float] = Field(default_factory=dict)
+
+
+class DeltaRecord(BaseModel):
+    """Per-baseline correlation record between a post and source statements."""
+    baseline_type: Literal["claims", "extractive", "abstractive"]
+    statements: list[str]
+    status_per_statement: list[Literal["shared", "suppressed", "distorted"]]
+    intent: str | None = None
+
+
+class Persona(BaseModel):
+    """Configuration for a writing style persona (v2 schema)."""
+    name: str
+    embedding_model: str  # mandatory in v2; e.g. "sentence-transformers/all-MiniLM-L6-v2"
+    status: Literal["complete", "incomplete"] = "complete"
+    incomplete_stages: list[str] = Field(default_factory=list)
+
+    # Global synthesis fields (populated by DEEP_SYNTHESIS_PROMPT)
+    agenda: str = ""
+    worldview: str = ""
+    pivot_logic: str = ""
     identifiable_nuances: list[str] = Field(default_factory=list)
-    
-    # Quantified Confidence (0-100)
     attribute_confidence: dict[str, int] = Field(default_factory=dict)
+
+    # Per-topic profiles; mandatory — min 1 topic (fallback "_global")
+    topics: dict[str, TopicProfile]
+
+    # Optional persona display fields
+    role: str = ""
+    tone: str = ""
+    structure_pattern: str = ""
+    hashtag_style: str = "lowercase"
+
+
+# ---------------------------------------------------------------------------
+# Persona manager
+# ---------------------------------------------------------------------------
+
+def _is_v1_shape(data: dict) -> bool:
+    """Return True if `data` looks like a v1 Persona (top-level v1-only fields, no topics/embedding_model)."""
+    v1_fields = {"revelation_priorities", "suppression_rules", "substantive_anchors", "rhetorical_strategy"}
+    has_v1 = bool(v1_fields & set(data.keys()))
+    missing_v2 = "topics" not in data or "embedding_model" not in data
+    return has_v1 and missing_v2
 
 
 class PersonaManager:
@@ -43,7 +82,12 @@ class PersonaManager:
         self._loaded = False
 
     def reload(self) -> None:
-        """Scan config directory for persona YAML files."""
+        """Scan config directory for persona YAML files.
+
+        Raises:
+            ValidationError: If a file fails Pydantic v2 schema validation (not swallowed).
+            SystemExit(2): If a v1-shape file is detected (unsupported_persona_schema).
+        """
         self._personas = {}
         self._loaded = True
         if not self.config_dir.exists():
@@ -54,16 +98,27 @@ class PersonaManager:
             try:
                 with open(path, "r") as f:
                     data = yaml.safe_load(f)
-                    if not isinstance(data, dict):
-                        logger.warning(f"Skipping invalid persona file (not a dict): {path}")
-                        continue
-                    # Use filename (minus extension) as persona name if not in YAML
-                    name = data.get("name", path.stem)
-                    data["name"] = name
-                    self._personas[name] = Persona.model_validate(data)
-            except Exception as e:
-                logger.warning(f"Failed to load persona from {path}: {e}")
+            except yaml.YAMLError as exc:
+                logger.warning(f"Skipping malformed YAML file {path.name}: {exc}")
                 continue
+
+            if not isinstance(data, dict):
+                logger.warning(f"Skipping invalid persona file (not a dict): {path}")
+                continue
+
+            if _is_v1_shape(data):
+                logger.error(
+                    '{"level":"error","stage":"load","code":"unsupported_persona_schema",'
+                    f'"message":"v1-shape persona file detected: {path.name}. '
+                    'Delete and re-derive with tldr-scholar-synthesize-style."}'
+                )
+                sys.exit(2)
+
+            # Use filename (minus extension) as persona name if not in YAML
+            name = data.get("name", path.stem)
+            data["name"] = name
+            # ValidationError propagates — no swallowing
+            self._personas[name] = Persona.model_validate(data)
 
     def _ensure_loaded(self) -> None:
         if not self._loaded:
