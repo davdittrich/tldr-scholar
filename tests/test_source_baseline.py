@@ -170,3 +170,8 @@ class TestBuildBaselinesFullMode:
         assert calls, "LLM must be called"
         assert "<untrusted_content>" in calls[0], "Prompt must wrap source in <untrusted_content>"
         assert _SAMPLE_TEXT in calls[0], "Source text must appear in prompt"
+
+    async def test_build_baselines_rejects_none_llm_call(self):
+        """llm_call must not be None; raises ValueError at function entry."""
+        with pytest.raises(ValueError):
+            await build_baselines(_SAMPLE_TEXT, full=False, llm_call=None)

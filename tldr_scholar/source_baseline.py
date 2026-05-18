@@ -99,8 +99,8 @@ def _parse_claims_yaml(raw: Any) -> Optional[list[str]]:
 
 async def build_baselines(
     source_text: str,
+    llm_call: LLMCaller,
     full: bool = False,
-    llm_call: Optional[LLMCaller] = None,
 ) -> SourceBaselines:
     """Produce baselines for one source.
 
@@ -108,13 +108,16 @@ async def build_baselines(
     ----------
     source_text:
         Raw source document text.
+    llm_call:
+        Async callable that accepts a prompt string and returns the LLM response.
+        Required for claims extraction and abstractive baseline.
     full:
         False (default) → claims only.
         True → claims + extractive (sumy) + abstractive (LLM).
-    llm_call:
-        Async callable that accepts a prompt string and returns the LLM response.
-        Injected for testability; must not be None when claims/abstractive run.
     """
+    if llm_call is None:
+        raise ValueError("build_baselines requires llm_call (must not be None)")
+
     # --- claims baseline (always attempted) ---------------------------------
     claims: Optional[list[str]] = None
     try:

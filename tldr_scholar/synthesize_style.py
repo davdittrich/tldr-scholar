@@ -248,8 +248,8 @@ async def run_synthesis(args):
             logger.info(f">>> Analyzing Pair {i+1}/{len(corpus)}")
             baselines = await build_baselines(
                 source_text,
-                full=getattr(args, "full_baselines", False),
                 llm_call=caller,
+                full=getattr(args, "full_baselines", False),
             )
             if baselines.claims is None and baselines.extractive_summary is None and baselines.abstractive_summary is None:
                 emit_envelope(
