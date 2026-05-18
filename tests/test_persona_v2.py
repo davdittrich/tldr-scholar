@@ -12,8 +12,6 @@ This file adds the two gap-closers the spec mandates.
 """
 from __future__ import annotations
 
-import yaml
-import pytest
 from pathlib import Path
 
 from tldr_scholar.personas import Persona, PersonaManager, write_persona_yaml

@@ -67,6 +67,4 @@ async def test_preflight_called_at_run_synthesis_entry() -> None:
     assert exc_info.value.code == 1, (
         f"Expected SystemExit(1) from ACP_AVAILABLE=False guard, got {exc_info.value.code}"
     )
-    mock_preflight.assert_called_once_with(), (
-        "check_embedding_model_cached() must be called exactly once at run_synthesis entry"
-    )
+    mock_preflight.assert_called_once()
