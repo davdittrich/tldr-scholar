@@ -13,6 +13,35 @@ from tldr_scholar.config import DEFAULT_PERSONA_DIR
 
 
 # ---------------------------------------------------------------------------
+# Forward-declared helpers (avoid circular import; error_contract imported lazily)
+# ---------------------------------------------------------------------------
+
+def _warn_if_incomplete(persona: "Persona") -> None:
+    """Emit a warn envelope if the persona has status='incomplete'.
+
+    Imported lazily to avoid circular dependency between personas and error_contract.
+    """
+    if persona.status == "incomplete":
+        from tldr_scholar.error_contract import emit_envelope  # noqa: PLC0415
+        emit_envelope(
+            level="warn",
+            stage="load",
+            code="persona_incomplete",
+            message=(
+                f"Persona '{persona.name}' has status=incomplete "
+                f"(failed stages: {persona.incomplete_stages}). "
+                "Generation results may be degraded."
+            ),
+        )
+
+
+def write_persona_yaml(persona: "Persona", path: Path) -> None:
+    """Serialize *persona* to *path* as YAML (creates parent dirs)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(persona.model_dump(), sort_keys=False))
+
+
+# ---------------------------------------------------------------------------
 # Pydantic v2 models
 # ---------------------------------------------------------------------------
 
@@ -127,7 +156,10 @@ class PersonaManager:
     def get_persona(self, name: str) -> Persona | None:
         """Get a persona by name."""
         self._ensure_loaded()
-        return self._personas.get(name)
+        persona = self._personas.get(name)
+        if persona is not None:
+            _warn_if_incomplete(persona)
+        return persona
 
     def list_personas(self) -> list[str]:
         """Return list of available persona names."""

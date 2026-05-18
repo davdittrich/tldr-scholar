@@ -31,10 +31,10 @@ from tldr_scholar.ingestion_engine import LinkIngester
 from tldr_scholar.prompts import DEEP_SYNTHESIS_PROMPT
 from tldr_scholar.source_baseline import build_baselines
 from tldr_scholar.correlator import correlate_against_baselines
-from tldr_scholar._envelope import emit as emit_envelope
+from tldr_scholar.error_contract import emit_envelope, emit_drop_summary, EXIT_CODES
 from tldr_scholar.preflight import check_embedding_model_cached
 from tldr_scholar.aggregator import aggregate_topic, aggregate_global
-from tldr_scholar.personas import DeltaRecord, Persona, TopicProfile
+from tldr_scholar.personas import DeltaRecord, Persona, TopicProfile, write_persona_yaml
 from tldr_scholar.topic_cluster import EMBEDDING_MODEL_NAME
 
 try:
@@ -204,20 +204,47 @@ async def run_synthesis(args):
             topic_to_posts[tlabel].append(post.text)
             seen_post_texts.add(post.text)
 
+    # Compute output path early so exhaustion handlers can write partial YAML.
+    persona_name = args.name or "persona"
+    output_path = DEFAULT_PERSONA_DIR / f"{persona_name}.yaml"
+    incomplete_stages: list[str] = []
+
     # Build TopicProfile per topic
     topics: dict[str, TopicProfile] = {}
-    for tlabel in set(list(topic_to_deltas.keys()) + list(topic_to_posts.keys())):
-        centroid = topic_centroids.get(tlabel, [])
-        posts_for_topic = list(topic_to_posts.get(tlabel, []))
-        deltas_for_topic = list(topic_to_deltas.get(tlabel, []))
-        tp = await aggregate_topic(
-            label=tlabel,
-            centroid=centroid,
-            posts=posts_for_topic,
-            deltas=deltas_for_topic,
-            llm_call=caller,
+    try:
+        for tlabel in set(list(topic_to_deltas.keys()) + list(topic_to_posts.keys())):
+            centroid = topic_centroids.get(tlabel, [])
+            posts_for_topic = list(topic_to_posts.get(tlabel, []))
+            deltas_for_topic = list(topic_to_deltas.get(tlabel, []))
+            tp = await aggregate_topic(
+                label=tlabel,
+                centroid=centroid,
+                posts=posts_for_topic,
+                deltas=deltas_for_topic,
+                llm_call=caller,
+            )
+            topics[tlabel] = tp
+    except Exception:  # stage boundary: LLM API exhaustion
+        incomplete_stages.append("aggregate_topic")
+        partial = Persona(
+            name=persona_name,
+            embedding_model=EMBEDDING_MODEL_NAME,
+            status="incomplete",
+            incomplete_stages=incomplete_stages,
+            topics=topics or {"_global": TopicProfile(
+                label="_global", centroid=[], sample_size=0,
+                posts=[p.text for p in sampled_posts],
+            )},
         )
-        topics[tlabel] = tp
+        write_persona_yaml(partial, output_path)
+        emit_envelope(
+            level="error",
+            stage="aggregate_topic",
+            code="llm_exhausted",
+            message="LLM API exhausted during per-topic aggregation; partial persona written.",
+        )
+        emit_drop_summary()
+        sys.exit(EXIT_CODES["llm_exhausted"])
 
     # If no topics at all, create a _global fallback so Persona.topics is non-empty
     if not topics:
@@ -229,10 +256,28 @@ async def run_synthesis(args):
         )
 
     # Global synthesis
-    global_fields = await aggregate_global(final_reports, caller)
+    try:
+        global_fields = await aggregate_global(final_reports, caller)
+    except Exception:  # stage boundary: LLM API exhaustion
+        incomplete_stages.append("aggregate_global")
+        partial = Persona(
+            name=persona_name,
+            embedding_model=EMBEDDING_MODEL_NAME,
+            status="incomplete",
+            incomplete_stages=incomplete_stages,
+            topics=topics,
+        )
+        write_persona_yaml(partial, output_path)
+        emit_envelope(
+            level="error",
+            stage="aggregate_global",
+            code="llm_exhausted",
+            message="LLM API exhausted during global synthesis; partial persona written.",
+        )
+        emit_drop_summary()
+        sys.exit(EXIT_CODES["llm_exhausted"])
 
     # Build Persona
-    persona_name = args.name or "persona"
     persona = Persona(
         name=persona_name,
         embedding_model=EMBEDDING_MODEL_NAME,
@@ -244,11 +289,9 @@ async def run_synthesis(args):
         identifiable_nuances=global_fields.get("identifiable_nuances", []),
     )
 
-    output_path = DEFAULT_PERSONA_DIR / f"{persona_name}.yaml"
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "w") as f:
-        yaml.dump(persona.model_dump(), f, sort_keys=False)
+    write_persona_yaml(persona, output_path)
     logger.info(f"Success! {output_path}")
+    emit_drop_summary()
 
 def main():
     parser = argparse.ArgumentParser()

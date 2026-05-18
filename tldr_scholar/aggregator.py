@@ -12,7 +12,7 @@ from typing import Any, Awaitable, Callable
 
 from pydantic import BaseModel, ValidationError
 
-from tldr_scholar._envelope import emit
+from tldr_scholar.error_contract import emit_envelope as emit
 from tldr_scholar.personas import DeltaRecord, TopicProfile
 from tldr_scholar.prompts import DEEP_SYNTHESIS_PROMPT, TOPIC_AGGREGATION_PROMPT
 

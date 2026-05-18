@@ -21,14 +21,14 @@ class TestEmitEnvelopeKwarg:
     """C1: all-baselines-fail path must call emit_envelope without TypeError."""
 
     def test_emit_envelope_accepts_message_kwarg(self):
-        """emit() accepts 'message=' kwarg (not 'msg='); verifies call site is correct."""
-        from tldr_scholar._envelope import emit
+        """emit_envelope() accepts 'message=' kwarg (not 'msg='); verifies call site is correct."""
+        from tldr_scholar.error_contract import emit_envelope
 
         captured = io.StringIO()
         original_stderr = sys.stderr
         sys.stderr = captured
         try:
-            emit(
+            emit_envelope(
                 level="warn",
                 stage="test_stage",
                 code="test_code",
@@ -43,10 +43,10 @@ class TestEmitEnvelopeKwarg:
         assert envelope["message"] == "test message"
 
     def test_emit_envelope_rejects_msg_kwarg(self):
-        """emit() raises TypeError when called with 'msg=' (verifies the bug contract)."""
-        from tldr_scholar._envelope import emit
+        """emit_envelope() raises TypeError when called with 'msg=' (verifies the bug contract)."""
+        from tldr_scholar.error_contract import emit_envelope
         with pytest.raises(TypeError, match="unexpected keyword argument"):
-            emit(level="warn", stage="s", code="c", msg="wrong kwarg")
+            emit_envelope(level="warn", stage="s", code="c", msg="wrong kwarg")
 
     @pytest.mark.asyncio
     async def test_all_baselines_fail_no_typeerror(self):

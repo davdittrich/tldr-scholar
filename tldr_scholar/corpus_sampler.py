@@ -13,7 +13,7 @@ import sys
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 
-from tldr_scholar._envelope import emit
+from tldr_scholar.error_contract import emit_envelope as emit
 from tldr_scholar.scrape_filter import is_likely_injection
 from tldr_scholar.topic_cluster import cluster_posts
 
