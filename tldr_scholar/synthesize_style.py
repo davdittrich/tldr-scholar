@@ -12,7 +12,7 @@ from loguru import logger
 
 from tldr_scholar.config import DEFAULT_PERSONA_DIR
 from tldr_scholar.ingest import ingest
-from tldr_scholar.scrapers import ScraperFactory, SocialPost
+from tldr_scholar.scrapers import ScraperFactory, SocialPost, UnknownURLError
 from tldr_scholar.ingestion_engine import LinkIngester
 
 try:
@@ -124,9 +124,10 @@ async def run_synthesis(args):
         if ":/" in source_str and "://" not in source_str: source_str = source_str.replace(":/", "://")
         if ":///" in source_str: source_str = source_str.replace(":///", "://")
         
-        scraper = ScraperFactory.get_scraper(source_str, client)
-        if not scraper:
-            logger.error("URL not supported.")
+        try:
+            scraper = ScraperFactory.get_scraper(source_str, client)
+        except UnknownURLError as e:
+            logger.error(f"URL not supported: {e}")
             sys.exit(1)
 
         # 1. Fetch ALL posts from 12 months

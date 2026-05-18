@@ -20,6 +20,11 @@ def _backoff_delay(attempt: int, retry_after: Optional[float] = None) -> float:
     return min(1.0 * (2 ** attempt), 60.0) + random.uniform(0, 1.0)
 
 
+class UnknownURLError(ValueError):
+    """Raised when no scraper matches the given URL."""
+    pass
+
+
 class SocialPost(BaseModel):
     """Normalized social media post with engagement."""
     text: str
@@ -234,11 +239,11 @@ class ScraperFactory:
     """Factory to get the correct scraper for a URL."""
 
     @staticmethod
-    def get_scraper(url: str, client: httpx.AsyncClient) -> Optional[BaseScraper]:
+    def get_scraper(url: str, client: httpx.AsyncClient) -> BaseScraper:
         parsed = urlparse(url)
         domain = parsed.netloc.lower()
         if "bsky.app" in domain:
             return BlueskyScraper(client)
         if "/@" in parsed.path:
             return MastodonScraper(client)
-        return None
+        raise UnknownURLError(f"No scraper for URL: {url}")
