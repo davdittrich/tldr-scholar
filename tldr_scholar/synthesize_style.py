@@ -64,10 +64,10 @@ Return ONLY a YAML dictionary with 'profile' and 'confidence' keys.
 """
 
 async def call_gemini(prompt: str, label: str) -> Any:
-    print(f"\n[GEMINI CALL: {label}]")
-    print("-" * 20)
-    print(prompt[:1000] + ("..." if len(prompt) > 1000 else ""))
-    print("-" * 20)
+    logger.debug(f"[GEMINI CALL: {label}]")
+    logger.debug("-" * 20)
+    logger.debug(prompt[:1000] + ("..." if len(prompt) > 1000 else ""))
+    logger.debug("-" * 20)
     
     result, _ = summarize_via_gemini(text="", prompt=prompt, timeout=180)
     if not result:
@@ -82,7 +82,7 @@ async def call_gemini(prompt: str, label: str) -> Any:
     try:
         return yaml.safe_load(clean_result)
     except Exception as e:
-        print(f"\n[!] YAML Parse Error in {label}: {e}")
+        logger.error(f"YAML Parse Error in {label}: {e}")
         return None
 
 async def classify_domains(posts: list[SocialPost]) -> dict[str, list[int]]:
@@ -180,7 +180,7 @@ async def run_synthesis(args):
     # 5. Atomic Pipeline
     final_reports = []
     for i, (source_text, post_text) in enumerate(corpus):
-        print(f"\n>>> Analyzing Pair {i+1}/{len(corpus)}")
+        logger.info(f">>> Analyzing Pair {i+1}/{len(corpus)}")
         statements = await decompose_source(source_text)
         if not statements: continue
         delta = await correlate_post_to_source(statements, post_text)
