@@ -182,9 +182,14 @@ async def run_synthesis(args):
     for i, (source_text, post_text) in enumerate(corpus):
         logger.info(f">>> Analyzing Pair {i+1}/{len(corpus)}")
         statements = await decompose_source(source_text)
-        if not statements: continue
+        if not statements:
+            logger.debug(f"Skipping pair {i+1}: decompose_source returned no statements")
+            continue
         delta = await correlate_post_to_source(statements, post_text)
-        if delta: final_reports.append(delta)
+        if delta:
+            final_reports.append(delta)
+        else:
+            logger.debug(f"Skipping pair {i+1}: correlate_post_to_source returned no delta")
 
     # 6. Synthesis
     synth_data = await synthesize_deep_profile(final_reports)
