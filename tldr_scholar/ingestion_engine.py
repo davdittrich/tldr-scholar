@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
@@ -11,7 +12,7 @@ import httpx
 from loguru import logger
 
 from tldr_scholar.ingest import ingest
-from tldr_scholar.scrapers import SocialPost
+from tldr_scholar.scrapers import SocialPost, SourceArticle
 
 SUBSTANTIVE_TLDS = {".edu", ".gov", ".org"}
 SUBSTANTIVE_PATTERNS = ["news", "blog", "article", "journal", "paper"]
@@ -74,21 +75,32 @@ class LinkIngester:
                 
         return None
 
-    async def process_posts(self, posts: list[SocialPost]) -> list[tuple[SocialPost, Optional[str]]]:
+    async def process_posts(self, posts: list[SocialPost]) -> list[SourceArticle]:
         """Parallel process all links in a list of posts."""
         tasks: list = []
         task_post_idx: list[int] = []
+        post_links: list[Optional[str]] = [None] * len(posts)
         for idx, post in enumerate(posts):
             # For now, we only take the FIRST substantive link per post
             link = next((l for l in post.links if self.is_substantive(l)), None)
+            post_links[idx] = link
             if link:
                 tasks.append(self.fetch_article(link))
                 task_post_idx.append(idx)
 
         fetched = await asyncio.gather(*tasks) if tasks else []
-        results: list[Optional[str]] = [None] * len(posts)
+        bodies: list[Optional[str]] = [None] * len(posts)
         for i, body in zip(task_post_idx, fetched):
-            results[i] = body
-        success = len([r for r in results if r])
-        logger.info(f"Ingestion complete: {success} success, {len(results)-success} skipped/failed")
-        return list(zip(posts, results))
+            bodies[i] = body
+        success = len([b for b in bodies if b])
+        logger.info(f"Ingestion complete: {success} success, {len(bodies)-success} skipped/failed")
+        now = datetime.now(timezone.utc)
+        return [
+            SourceArticle(
+                url=post_links[i] or "",
+                body=bodies[i],
+                fetched_at=now,
+                post=posts[i],
+            )
+            for i in range(len(posts))
+        ]

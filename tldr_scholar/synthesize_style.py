@@ -191,10 +191,10 @@ async def run_synthesis(args):
                 corpus.append((post.text, post.text))
         else:
             ingester = LinkIngester(concurrency=args.concurrency)
-            pairs = await ingester.process_posts(sampled_posts)
-            for post, article in pairs:
-                source = article if article else post.text
-                corpus.append((source, post.text))
+            articles = await ingester.process_posts(sampled_posts)
+            for art in articles:
+                source = art.body if art.body else art.post.text
+                corpus.append((source, art.post.text))
 
     # 5. Atomic Pipeline
     final_reports = []

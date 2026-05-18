@@ -39,3 +39,52 @@ def test_scrapers_conform_to_base_protocol():
     b = BlueskyScraper(client=None)  # type: ignore[arg-type]
     assert isinstance(m, BaseScraper)
     assert isinstance(b, BaseScraper)
+
+
+def test_source_article_model_fields():
+    from tldr_scholar.scrapers import SourceArticle, SocialPost
+    from datetime import datetime, timezone
+    post = SocialPost(
+        text="x",
+        timestamp=datetime.now(timezone.utc),
+        source_url="https://example.com",
+        links=[],
+        engagement=0,
+    )
+    art = SourceArticle(
+        url="https://example.com",
+        body="hello",
+        fetched_at=datetime.now(timezone.utc),
+        post=post,
+    )
+    assert art.url == "https://example.com"
+    assert art.body == "hello"
+    assert art.post.text == "x"
+
+
+@pytest.mark.asyncio
+async def test_process_posts_returns_source_article_list():
+    from tldr_scholar.scrapers import SourceArticle, SocialPost
+    from tldr_scholar.ingestion_engine import LinkIngester
+    from datetime import datetime, timezone
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as tmp:
+        ingester = LinkIngester(cache_dir=Path(tmp), concurrency=1)
+        posts = [
+            SocialPost(
+                text="no link",
+                timestamp=datetime.now(timezone.utc),
+                source_url="https://example.com/post/1",
+                links=[],
+                engagement=0,
+            ),
+        ]
+        results = await ingester.process_posts(posts)
+        assert isinstance(results, list)
+        assert len(results) == 1
+        assert all(isinstance(r, SourceArticle) for r in results)
+        assert results[0].body is None
+        assert results[0].url == ""
+        assert results[0].post is posts[0]

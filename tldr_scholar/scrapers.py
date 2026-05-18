@@ -30,6 +30,15 @@ class SocialPost(BaseModel):
     engagement: int = 0 # sum of likes, boosts, etc.
 
 
+class SourceArticle(BaseModel):
+    """Bridges a SocialPost and its fetched article body."""
+    url: str
+    body: Optional[str] = None
+    title: Optional[str] = None
+    fetched_at: datetime
+    post: SocialPost
+
+
 @runtime_checkable
 class BaseScraper(Protocol):
     """Interface for social media scrapers."""
