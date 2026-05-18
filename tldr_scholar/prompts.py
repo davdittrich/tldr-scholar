@@ -1,7 +1,10 @@
 """Prompt templates for summarization backends."""
 from __future__ import annotations
 
+import math
 import re
+import sys
+from collections import defaultdict
 
 from tldr_scholar.types import AudienceEnum, ToneEnum
 from tldr_scholar.personas import PersonaManager
@@ -239,6 +242,40 @@ SINGLE_PROMPT_TEMPLATE = """\
 </document>"""
 
 
+# ---------------------------------------------------------------------------
+# Topic-blending helpers (gen-time; WU-6)
+# ---------------------------------------------------------------------------
+
+_SOFTMAX_TAU: float = 0.3
+_MIN_WEIGHT: float = 0.1
+_TOP_K: int = 3
+
+
+def _cosine_sim(a: list[float], b: list[float]) -> float:
+    """Dot-product similarity for L2-normalised vectors (no sqrt needed)."""
+    return sum(x * y for x, y in zip(a, b, strict=True))
+
+
+def _softmax(scores: list[float], tau: float) -> list[float]:
+    """Numerically-stable softmax with temperature tau."""
+    m = max(scores)
+    exps = [math.exp((s - m) / tau) for s in scores]
+    total = sum(exps)
+    return [e / total for e in exps]
+
+
+def _blend_lists(weighted_topic_lists: list[tuple[float, list[str]]]) -> list[str]:
+    """Weighted-frequency vote across retained TopicProfiles.
+
+    Returns de-duplicated list sorted by descending aggregate weight.
+    """
+    scores: dict[str, float] = defaultdict(float)
+    for w, items in weighted_topic_lists:
+        for item in items:
+            scores[item] += w
+    return [item for item, _ in sorted(scores.items(), key=lambda kv: -kv[1])]
+
+
 class PromptBuilder:
     """Class to build customized system and user prompts."""
 
@@ -331,32 +368,76 @@ class PromptBuilder:
                     if p_config.worldview:
                         intent_parts.append(f"Your implied worldview/leaning: {p_config.worldview}")
 
-                    # Collect revelation_priorities + suppression_rules across all topics
-                    all_revelation: list[str] = []
-                    all_suppression: list[str] = []
-                    all_rhetorical: list[str] = []
-                    for tp in p_config.topics.values():
-                        all_revelation.extend(tp.revelation_priorities)
-                        all_suppression.extend(tp.suppression_rules)
-                        if tp.rhetorical_strategy:
-                            all_rhetorical.append(tp.rhetorical_strategy)
+                    # Topic-aware blending (WU-6)
+                    from tldr_scholar.topic_cluster import (  # noqa: PLC0415
+                        embed_text as _embed_text,
+                        EMBEDDING_MODEL_NAME as _EMB_MODEL,
+                    )
+                    from tldr_scholar.error_contract import (  # noqa: PLC0415
+                        emit_envelope,
+                        EXIT_CODES,
+                    )
 
-                    # Deduplicate while preserving order
-                    seen: set[str] = set()
-                    unique_revelation = [x for x in all_revelation if not (x in seen or seen.add(x))]
-                    seen = set()
-                    unique_suppression = [x for x in all_suppression if not (x in seen or seen.add(x))]
+                    if p_config.embedding_model != _EMB_MODEL:
+                        emit_envelope(
+                            level="error",
+                            stage="generate",
+                            code="embedding_model_mismatch",
+                            message=(
+                                f"Persona declares embedding model "
+                                f"'{p_config.embedding_model}' but installed "
+                                f"default is '{_EMB_MODEL}'. "
+                                f"Regenerate persona via synthesize-style."
+                            ),
+                        )
+                        sys.exit(EXIT_CODES["embedding_mismatch"])
 
-                    if unique_revelation:
-                        priorities = ", ".join(unique_revelation)
+                    topics = p_config.topics
+                    if not topics:
+                        # Empty topics — no priority/suppression available
+                        priorities_list: list[str] = []
+                        suppressions_list: list[str] = []
+                        rhetorical: str = ""
+                    elif set(topics.keys()) == {"_global"}:
+                        # _global-only: use _global fields directly, skip blend
+                        g = topics["_global"]
+                        priorities_list = list(g.revelation_priorities)
+                        suppressions_list = list(g.suppression_rules)
+                        rhetorical = g.rhetorical_strategy
+                    else:
+                        # Multi-topic: softmax-weighted blend
+                        src_vec = _embed_text(text)
+                        topic_items = list(topics.items())
+                        sims = [
+                            _cosine_sim(src_vec, tp.centroid)
+                            for _, tp in topic_items
+                        ]
+                        weights = _softmax(sims, _SOFTMAX_TAU)
+                        weighted = [
+                            (w, tp)
+                            for w, (_, tp) in zip(weights, topic_items)
+                            if w >= _MIN_WEIGHT
+                        ]
+                        weighted.sort(key=lambda x: -x[0])
+                        weighted = weighted[:_TOP_K]
+                        priorities_list = _blend_lists(
+                            [(w, tp.revelation_priorities) for w, tp in weighted]
+                        )
+                        suppressions_list = _blend_lists(
+                            [(w, tp.suppression_rules) for w, tp in weighted]
+                        )
+                        rhetorical = weighted[0][1].rhetorical_strategy if weighted else ""
+
+                    if priorities_list:
+                        priorities = ", ".join(priorities_list)
                         intent_parts.append(f"REVEAL and amplify these substantive arguments: {priorities}")
-                    if unique_suppression:
-                        rules = ", ".join(unique_suppression)
+                    if suppressions_list:
+                        rules = ", ".join(suppressions_list)
                         intent_parts.append(f"SUPPRESS and ignore these deceptive or noisy claims: {rules}")
                     if p_config.pivot_logic:
                         intent_parts.append(f"Substantive Re-authoring (Pivot Logic): {p_config.pivot_logic}")
-                    if all_rhetorical:
-                        intent_parts.append(f"Rhetorical strategy: {all_rhetorical[0]}")
+                    if rhetorical:
+                        intent_parts.append(f"Rhetorical strategy: {rhetorical}")
                     
                     deep_intent_instr = "\n".join(intent_parts)
                     
