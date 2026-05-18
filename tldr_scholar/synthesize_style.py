@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
-"""Utility to synthesize a writing style profile from a corpus of posts."""
+"""Utility to synthesize a writing style profile with stratified engagement sampling."""
 import argparse
 import json
 import sys
+import asyncio
+import random
+from collections import defaultdict
 from pathlib import Path
+from typing import Any
 
 import yaml
+import httpx
 from loguru import logger
 
 from tldr_scholar.config import DEFAULT_PERSONA_DIR
 from tldr_scholar.ingest import ingest
+from tldr_scholar.scrapers import ScraperFactory, SocialPost
+from tldr_scholar.ingestion_engine import LinkIngester
 
 try:
     from gemini_acp import summarize_via_gemini, ACP_AVAILABLE
@@ -17,9 +24,19 @@ except ImportError:
     summarize_via_gemini = None
     ACP_AVAILABLE = False
 
+# Prompts
+CLASSIFICATION_PROMPT = """\
+Analyze the following list of social media posts. 
+Group them into logical "Substantive Domains" (e.g. Economics, Tech, Politics, Ethics).
+
+Posts:
+{posts}
+
+Return ONLY a YAML dictionary mapping "domain_name" to a list of post indices (0-indexed).
+"""
+
 DECOMPOSITION_PROMPT = """\
-Analyze the following text and decompose it into a list of atomic statements, 
-claims, and conclusions.
+Analyze the following text and decompose it into a list of atomic statements.
 
 Text:
 {text}
@@ -28,8 +45,7 @@ Return ONLY a YAML list of objects with 'id' and 'claim' fields.
 """
 
 CORRELATION_PROMPT = """\
-Compare the user's social media post against the following atomic statements 
-from the source text.
+Compare the user's social media post against the following atomic statements.
 
 Statements:
 {statements}
@@ -37,57 +53,29 @@ Statements:
 User Post:
 {post_text}
 
-For each statement, determine if it was:
-1. shared: The post revealed this claim.
-2. suppressed: The post ignored this claim (despite it being substantive).
-3. pivoted: The post transformed this claim into a different argument.
-
 Return ONLY a YAML list of objects with 'statement_id', 'status', and 'intent'.
-"""
-
-SYNTHESIS_PROMPT = """\
-Based on the following corpus of writing samples and source documents, 
-synthesize a deep cognitive architecture for an AI writing assistant.
-
-Corpus:
-{text}
-
-Focus on:
-- agenda: High-level purpose of the persona's writing.
-- worldview: Implied philosophical/political leaning.
-- revelation_priorities: What to prioritize.
-- suppression_rules: What to ignore or filter.
-- substantive_anchors: Core recurring topics or frames.
-- pivot_logic: How claims are reframed.
-- rhetorical_strategy: Linguistic patterns.
-- identifiable_nuances: Unique stylistic 'fingerprints'.
-
-Return ONLY a YAML dictionary.
 """
 
 DEEP_SYNTHESIS_PROMPT = """\
 Synthesize a global persona profile from the following atomic delta reports.
+Focus on identifying systematic revelation/suppression patterns.
 
 Delta Reports:
 {reports}
 
-Focus on identifying recurring intents and systematic revelation/suppression patterns.
-Quantify your confidence (0-100) for each major attribute.
-
 Return ONLY a YAML dictionary with 'profile' and 'confidence' keys.
 """
 
-
-def decompose_source(text: str) -> list[dict]:
-    """Decompose source text into atomic statements via LLM."""
-    if summarize_via_gemini is None or not ACP_AVAILABLE:
-        return []
-
-    prompt = DECOMPOSITION_PROMPT.format(text=text)
-    result, _ = summarize_via_gemini(text="", prompt=prompt)
+async def call_gemini(prompt: str, label: str) -> Any:
+    print(f"\n[GEMINI CALL: {label}]")
+    print("-" * 20)
+    print(prompt[:1000] + ("..." if len(prompt) > 1000 else ""))
+    print("-" * 20)
+    
+    result, _ = summarize_via_gemini(text="", prompt=prompt, timeout=180)
     if not result:
-        return []
-
+        return None
+        
     clean_result = result.strip()
     if "```yaml" in clean_result:
         clean_result = clean_result.split("```yaml")[1].split("```")[0].strip()
@@ -95,168 +83,134 @@ def decompose_source(text: str) -> list[dict]:
         clean_result = clean_result.split("```")[1].split("```")[0].strip()
 
     try:
-        data = yaml.safe_load(clean_result)
-        if isinstance(data, list):
-            for i, item in enumerate(data):
-                if isinstance(item, dict) and 'id' not in item:
-                    item['id'] = item.get('statement_id', f'c{i+1}')
-            return data
-        return []
-    except Exception:
-        return []
+        return yaml.safe_load(clean_result)
+    except Exception as e:
+        print(f"\n[!] YAML Parse Error in {label}: {e}")
+        return None
 
+async def classify_domains(posts: list[SocialPost]) -> dict[str, list[int]]:
+    # Batch classification for up to 200 posts (Mastodon limit approx)
+    limit = 200
+    post_texts = "\n".join([f"{i}: {p.text[:150]}" for i, p in enumerate(posts[:limit])])
+    prompt = CLASSIFICATION_PROMPT.format(posts=post_texts)
+    data = await call_gemini(prompt, "Classification")
+    return data if isinstance(data, dict) else {}
 
-def correlate_post_to_source(statements: list[dict], post_text: str) -> list[dict]:
-    """Map user post against atomic statements to find deltas."""
-    if summarize_via_gemini is None or not ACP_AVAILABLE:
-        return []
+async def decompose_source(text: str) -> list[dict]:
+    prompt = DECOMPOSITION_PROMPT.format(text=text)
+    data = await call_gemini(prompt, "Decomposition")
+    if isinstance(data, list):
+        for i, item in enumerate(data):
+            if isinstance(item, dict) and 'id' not in item:
+                item['id'] = item.get('statement_id', f'c{i+1}')
+        return data
+    return []
 
+async def correlate_post_to_source(statements: list[dict], post_text: str) -> list[dict]:
     statements_yaml = yaml.dump(statements)
     prompt = CORRELATION_PROMPT.format(statements=statements_yaml, post_text=post_text)
-    result, _ = summarize_via_gemini(text="", prompt=prompt)
-    if not result:
-        return []
+    data = await call_gemini(prompt, "Correlation")
+    return data if isinstance(data, list) else []
 
-    clean_result = result.strip()
-    if "```yaml" in clean_result:
-        clean_result = clean_result.split("```yaml")[1].split("```")[0].strip()
-    elif "```" in clean_result:
-        clean_result = clean_result.split("```")[1].split("```")[0].strip()
-
-    try:
-        data = yaml.safe_load(clean_result)
-        if isinstance(data, list):
-            return data
-        return []
-    except Exception:
-        return []
-
-
-def synthesize_deep_profile(reports: list[list[dict]]) -> dict:
-    """Synthesize global rules and confidence scores from atomic deltas."""
-    if summarize_via_gemini is None or not ACP_AVAILABLE:
-        return {}
-
+async def synthesize_deep_profile(reports: list[list[dict]]) -> dict:
     reports_yaml = yaml.dump(reports)
     prompt = DEEP_SYNTHESIS_PROMPT.format(reports=reports_yaml)
-    result, _ = summarize_via_gemini(text="", prompt=prompt)
-    if not result:
-        return {}
+    data = await call_gemini(prompt, "Synthesis")
+    return data if isinstance(data, dict) else {}
 
-    clean_result = result.strip()
-    if "```yaml" in clean_result:
-        clean_result = clean_result.split("```yaml")[1].split("```")[0].strip()
-    elif "```" in clean_result:
-        clean_result = clean_result.split("```")[1].split("```")[0].strip()
-
-    try:
-        data = yaml.safe_load(clean_result)
-        if isinstance(data, dict):
-            return data
-        return {}
-    except Exception:
-        return {}
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Synthesize writing style from corpus.")
-    parser.add_argument("source", type=Path, help="Path to text or JSONL corpus")
-    parser.add_argument("--format", choices=["text", "jsonl"], default="text")
-    parser.add_argument("--name", help="Name for the persona")
-    parser.add_argument("--output", type=Path, help="Output YAML path")
-    args = parser.parse_args()
-
-    if not args.source.exists():
-        logger.error(f"Source file {args.source} not found")
+async def run_synthesis(args):
+    if not ACP_AVAILABLE:
         sys.exit(1)
 
-    if summarize_via_gemini is None or not ACP_AVAILABLE:
-        logger.error("gemini-acp not installed or available. Cannot perform analysis.")
-        sys.exit(1)
-
-    data = {}
-    if args.format == "jsonl":
-        reports = []
-        logger.info(f"Executing bottom-up atomic pipeline for corpus: {args.source}")
-        with open(args.source, "r") as f:
-            for line in f:
-                if not line.strip():
-                    continue
-                try:
-                    entry = json.loads(line)
-                    post = entry.get("post")
-                    url = entry.get("url")
-                    if not post or not url:
-                        continue
-                    
-                    logger.info(f"Processing atomic delta for URL: {url}")
-                    source_text, _ = ingest(url)
-                    if not source_text:
-                        continue
-                        
-                    statements = decompose_source(source_text)
-                    if not statements:
-                        continue
-                        
-                    delta = correlate_post_to_source(statements, post)
-                    if delta:
-                        reports.append(delta)
-                except Exception as e:
-                    logger.warning(f"Skipping malformed corpus entry: {e}")
-                    continue
+    async with httpx.AsyncClient(follow_redirects=True) as client:
+        source_str = str(args.source)
+        if ":/" in source_str and "://" not in source_str: source_str = source_str.replace(":/", "://")
+        if ":///" in source_str: source_str = source_str.replace(":///", "://")
         
-        if not reports:
-            logger.error("No valid delta reports generated from corpus.")
+        scraper = ScraperFactory.get_scraper(source_str, client)
+        if not scraper:
+            logger.error("URL not supported.")
             sys.exit(1)
-            
-        logger.info("Synthesizing cognitive architecture from atomic reports...")
-        synth_data = synthesize_deep_profile(reports)
-        if not synth_data or not isinstance(synth_data, dict):
-            logger.error("Failed to synthesize deep profile.")
+
+        # 1. Fetch ALL posts from 12 months
+        logger.info(f"Scraping all posts from past 12 months...")
+        all_posts = await scraper.scrape(source_str, limit_months=args.months, max_posts=1000)
+        if not all_posts:
+            logger.error("No posts found.")
             sys.exit(1)
+
+        # 2. Classify ALL into domains
+        logger.info(f"Classifying {len(all_posts)} posts into domains...")
+        domain_map = await classify_domains(all_posts)
         
-        data = synth_data.get("profile", {})
-        if not isinstance(data, dict):
-            data = {}
-        data["attribute_confidence"] = synth_data.get("confidence", {})
+        # 3. Sampling: Target 200, balance domains, prefer success
+        target_sample_size = args.max_posts # 200
+        
+        # Sort each domain by engagement (descending)
+        for domain in domain_map:
+            domain_map[domain].sort(key=lambda idx: all_posts[idx].engagement if idx < len(all_posts) else 0, reverse=True)
+        
+        chosen_indices = set()
+        
+        # Round-robin selection to ensure balance and all domains present
+        domains = list(domain_map.keys())
+        if not domains:
+            # Fallback to simple success sampling if classification failed
+            logger.warning("No domains identified. Falling back to global engagement sort.")
+            sorted_all = sorted(range(len(all_posts)), key=lambda i: all_posts[i].engagement, reverse=True)
+            chosen_indices.update(sorted_all[:target_sample_size])
+        else:
+            ptr = {d: 0 for d in domains}
+            while len(chosen_indices) < target_sample_size and any(ptr[d] < len(domain_map[d]) for d in domains):
+                for d in domains:
+                    if ptr[d] < len(domain_map[d]):
+                        chosen_indices.add(domain_map[d][ptr[d]])
+                        ptr[d] += 1
+                        if len(chosen_indices) >= target_sample_size:
+                            break
 
-    else:
-        # Enforce Atomic Pipeline as Default for text
-        text = args.source.read_text()
-        logger.info(f"Executing atomic pipeline for text source: {args.source}")
-        chunks = [text[i:i+1000] for i in range(0, len(text), 1000)]
-        reports = []
-        for i, chunk in enumerate(chunks[:10]):
-            logger.info(f"Processing text partition {i+1}/{min(10, len(chunks))}...")
-            statements = decompose_source(chunk)
-            if not statements: continue
-            delta = correlate_post_to_source(statements, chunk)
-            if delta: reports.append(delta)
-            
-        if not reports:
-            logger.error("No valid delta reports generated.")
-            sys.exit(1)
-            
-        synth_data = synthesize_deep_profile(reports)
-        if not synth_data:
-            sys.exit(1)
-        data = synth_data.get("profile", {})
-        if not isinstance(data, dict):
-            data = {}
-        data["attribute_confidence"] = synth_data.get("confidence", {})
+        sampled_posts = [all_posts[i] for i in sorted(list(chosen_indices))]
+        logger.info(f"Sampled {len(sampled_posts)} posts balanced across domains (success preferred).")
 
-    if args.name:
-        data["name"] = args.name
+        # 4. Ingest Links for samples
+        ingester = LinkIngester(concurrency=args.concurrency)
+        pairs = await ingester.process_posts(sampled_posts)
+        corpus = []
+        for post, article in pairs:
+            source = article if article else post.text
+            corpus.append((source, post.text))
 
-    name = data.get("name", args.source.stem) if isinstance(data, dict) else args.source.stem
-    output_path = args.output or DEFAULT_PERSONA_DIR / f"{name}.yaml"
+    # 5. Atomic Pipeline
+    final_reports = []
+    for i, (source_text, post_text) in enumerate(corpus):
+        print(f"\n>>> Analyzing Pair {i+1}/{len(corpus)}")
+        statements = await decompose_source(source_text)
+        if not statements: continue
+        delta = await correlate_post_to_source(statements, post_text)
+        if delta: final_reports.append(delta)
+
+    # 6. Synthesis
+    synth_data = await synthesize_deep_profile(final_reports)
+    data = synth_data.get("profile", {})
+    data["attribute_confidence"] = synth_data.get("confidence", {})
+    if args.name: data["name"] = args.name
+
+    name = data.get("name", "persona")
+    output_path = DEFAULT_PERSONA_DIR / f"{name}.yaml"
     output_path.parent.mkdir(parents=True, exist_ok=True)
-
     with open(output_path, "w") as f:
         yaml.dump(data, f, sort_keys=False)
-        
-    logger.info(f"Success! Deep Persona '{name}' saved to {output_path}")
+    logger.info(f"Success! {output_path}")
 
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("source")
+    parser.add_argument("--name")
+    parser.add_argument("--months", type=int, default=12)
+    parser.add_argument("--max-posts", type=int, default=200)
+    parser.add_argument("--concurrency", type=int, default=5)
+    args = parser.parse_args()
+    asyncio.run(run_synthesis(args))
 
 if __name__ == "__main__":
     main()
