@@ -139,7 +139,21 @@ async def run_synthesis(args):
         # 2. Classify ALL into domains
         logger.info(f"Classifying {len(all_posts)} posts into domains...")
         domain_map = await classify_domains(all_posts)
-        
+
+        # Sanitize LLM output: drop non-int and out-of-range indices per domain,
+        # then drop empty domains entirely.
+        n_posts = len(all_posts)
+        sanitized: dict = {}
+        for domain, indices in domain_map.items():
+            valid = [i for i in indices if isinstance(i, int) and 0 <= i < n_posts]
+            dropped = len(indices) - len(valid)
+            if dropped:
+                logger.warning(f"Domain '{domain}': dropped {dropped} invalid LLM-emitted indices")
+            if valid:
+                sanitized[domain] = valid
+            else:
+                logger.warning(f"Domain '{domain}': empty after validation, dropping")
+        domain_map = sanitized
         # 3. Sampling: Target 200, balance domains, prefer success
         target_sample_size = args.max_posts # 200
         
