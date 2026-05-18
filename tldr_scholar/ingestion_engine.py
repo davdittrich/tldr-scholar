@@ -12,7 +12,12 @@ import httpx
 from loguru import logger
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, SpinnerColumn, TextColumn, TimeRemainingColumn
 
-from tldr_scholar.ingest import ingest
+from tldr_scholar.ingest import (
+    ingest,
+    EmptyTextError,
+    PasswordProtectedError,
+    UnsupportedInputError,
+)
 from tldr_scholar.scrapers import SocialPost, SourceArticle
 
 SUBSTANTIVE_TLDS = {".edu", ".gov", ".org"}
@@ -45,7 +50,7 @@ class LinkIngester:
         if any(p in netloc or p in path for p in SUBSTANTIVE_PATTERNS):
             return True
             
-        # Default: lean permissive for academic domains but skip known trackers/media
+        # Explicit deny for known media domains, otherwise reject (whitelist policy)
         if any(x in netloc for x in ["youtube.com", "imgur.com", "giphy.com"]):
             return False
 
@@ -71,7 +76,14 @@ class LinkIngester:
                 if text:
                     cache_path.write_text(text)
                     return text
-            except (httpx.HTTPError, ValueError, IOError) as e:
+            except (
+                httpx.HTTPError,
+                ValueError,
+                IOError,
+                EmptyTextError,
+                PasswordProtectedError,
+                UnsupportedInputError,
+            ) as e:
                 logger.warning(f"Failed to ingest {url}: {e}")
                 
         return None

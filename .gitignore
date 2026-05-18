@@ -9,3 +9,6 @@ dist/
 .dolt/
 *.db
 .beads-credential-key
+
+# Tooling artifacts
+.serena/

@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Utility to synthesize a writing style profile with stratified engagement sampling."""
+"""Synthesize a writing style profile with stratified engagement sampling.
+
+CLI flags:
+    source              feed URL (Mastodon/Bluesky) or local samples file
+    --name NAME         persona output name (writes to DEFAULT_PERSONA_DIR/<name>.yaml)
+    --months N          lookback window in months (default 12)
+    --max-posts N       sample size cap (default 200)
+    --concurrency N     parallel link fetches (default 5)
+    --skip-links        skip article ingestion, use post bodies only (default off)
+"""
 import argparse
 import sys
 import asyncio
@@ -82,7 +91,7 @@ async def call_gemini(prompt: str, label: str) -> Any:
 
     try:
         return yaml.safe_load(clean_result)
-    except Exception as e:
+    except yaml.YAMLError as e:
         logger.error(f"YAML Parse Error in {label}: {e}")
         return None
 

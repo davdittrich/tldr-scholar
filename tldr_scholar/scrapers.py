@@ -17,7 +17,7 @@ def _backoff_delay(attempt: int, retry_after: Optional[float] = None) -> float:
     """Exponential backoff with jitter. Honors Retry-After if provided."""
     if retry_after is not None and retry_after > 0:
         return min(retry_after, 60.0) + random.uniform(0, 1.0)
-    return min(1.0 * (2 ** attempt), 60.0) + random.uniform(0, 1.0)
+    return min(2 ** attempt, 60.0) + random.uniform(0, 1.0)
 
 
 class UnknownURLError(ValueError):
