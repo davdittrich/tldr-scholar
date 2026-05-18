@@ -2,13 +2,9 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
 
 from tldr_scholar.types import AudienceEnum, ToneEnum
 from tldr_scholar.personas import PersonaManager
-
-if TYPE_CHECKING:
-    pass
 
 # ---------------------------------------------------------------------------
 # Relocated from synthesize_style.py — delta pipeline prompts

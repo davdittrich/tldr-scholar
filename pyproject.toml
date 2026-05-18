@@ -37,3 +37,6 @@ tldr-scholar-synthesize-style = "tldr_scholar.synthesize_style:main"
 testpaths = ["tests"]
 addopts = "-v --tb=short --strict-markers"
 asyncio_mode = "auto"
+
+[tool.setuptools.package-data]
+tldr_scholar = ["data/*.txt"]

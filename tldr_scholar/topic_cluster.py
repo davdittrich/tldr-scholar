@@ -8,11 +8,6 @@ The model is initialized on first call to _get_model() or any embed_*/cluster_po
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    pass
-
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -91,10 +86,10 @@ def cluster_posts(
             metric="euclidean",  # cosine not available for all hdbscan builds; use euclidean on normalized vecs
             core_dist_n_jobs=1,
         )
-        if seed is not None:
-            # hdbscan HDBSCAN doesn't have a random_state param in all versions;
-            # we use numpy seed for reproducibility of downstream ops
-            np.random.seed(seed)
+        # NOTE: hdbscan.HDBSCAN does not accept a random_state / seed parameter in all
+        # released versions (the tree approximation step is deterministic for euclidean
+        # metric anyway).  We intentionally do NOT mutate np.random.seed() here —
+        # callers that need reproducible downstream operations should manage their own RNG.
         raw_labels: list[int] = clusterer.fit_predict(emb_arr).tolist()
     except Exception:
         # Fallback: single global cluster

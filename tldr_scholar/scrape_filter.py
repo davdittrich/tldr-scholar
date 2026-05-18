@@ -15,7 +15,7 @@ from loguru import logger
 # Pattern loading
 # ---------------------------------------------------------------------------
 
-_PATTERNS_FILE = Path(__file__).parent.parent / "tests" / "fixtures" / "injection_patterns.txt"
+_PATTERNS_FILE = Path(__file__).parent / "data" / "injection_patterns.txt"
 
 _COMPILED: list[re.Pattern] | None = None
 
@@ -38,7 +38,9 @@ def _load_patterns() -> list[re.Pattern]:
             except re.error as exc:
                 logger.warning(f"scrape_filter: skipping invalid pattern {stripped!r}: {exc}")
     except FileNotFoundError:
-        logger.warning(f"scrape_filter: patterns file not found at {_PATTERNS_FILE}")
+        raise RuntimeError(
+            f"injection pattern file missing — package data not installed: {_PATTERNS_FILE}"
+        ) from None
 
     _COMPILED = patterns
     return _COMPILED
