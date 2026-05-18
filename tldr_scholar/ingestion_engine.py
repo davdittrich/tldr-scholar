@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 import httpx
 from loguru import logger
+from rich.progress import BarColumn, MofNCompleteColumn, Progress, SpinnerColumn, TextColumn, TimeRemainingColumn
 
 from tldr_scholar.ingest import ingest
 from tldr_scholar.scrapers import SocialPost, SourceArticle
@@ -94,7 +95,22 @@ class LinkIngester:
                 owner_idx.append(idx)
                 owner_link.append(link)
 
-        fetched = await asyncio.gather(*tasks) if tasks else []
+        fetched: list = []
+        if tasks:
+            async def _with_progress(coro, progress, bar_id):
+                result = await coro
+                progress.update(bar_id, advance=1)
+                return result
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                MofNCompleteColumn(),
+                TimeRemainingColumn(),
+            ) as progress:
+                bar = progress.add_task("Fetching articles", total=len(tasks))
+                wrapped = [_with_progress(t, progress, bar) for t in tasks]
+                fetched = await asyncio.gather(*wrapped)
         success = len([b for b in fetched if b])
         logger.info(f"Ingestion complete: {success}/{len(fetched)} successful link fetches across {len(posts)} posts")
         now = datetime.now(timezone.utc)
