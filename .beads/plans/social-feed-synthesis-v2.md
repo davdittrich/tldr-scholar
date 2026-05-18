@@ -1,3 +1,4 @@
+<!-- SUPERSEDED-BY: social-feed-synthesis-v4.md (2026-05-18) -->
 # Implementation Plan: Social Feed Synthesis (v2)
 
 ## Goal
