@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 """Utility to synthesize a writing style profile with stratified engagement sampling."""
 import argparse
-import json
 import sys
 import asyncio
-import random
-from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
