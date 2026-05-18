@@ -201,6 +201,20 @@ class TestNoContentEcho:
         env = json.loads(raw.strip())
         assert secret not in env["message"]
 
+    def test_drops_reason_is_scrubbed(self, monkeypatch):
+        """drops[].reason must be passed through _scrub_string — injection-content
+        must not appear verbatim in the emitted envelope."""
+        secret = "DROPS_REASON_INJECTION_XYZ"
+        monkeypatch.setenv("_TEST_INJECT_REASON", secret)
+        raw = _capture_stderr(
+            emit_envelope, "warn", "s", "c", "msg",
+            drops=[{"source": "test_source", "reason": secret}],
+        )
+        env = json.loads(raw.strip())
+        assert env["drops"][0]["reason"] != secret, (
+            "drops[].reason must be scrubbed but was echoed verbatim"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Drop summary: stdout, not stderr
@@ -252,14 +266,6 @@ class TestDropCounter:
         from tldr_scholar.error_contract import _DROP_COUNTER
         assert _DROP_COUNTER == {}
 
-
-# ---------------------------------------------------------------------------
-# Partial-write: aggregate_topic exhaustion
-# ---------------------------------------------------------------------------
-
-class TestPartialWriteAggregateTopic:
-    def setup_method(self):
-        reset_drop_counter()
 
 # ---------------------------------------------------------------------------
 # Partial-write: aggregate_topic exhaustion

@@ -91,7 +91,7 @@ def emit_envelope(
             scrubbed_drops.append(
                 {
                     "source": _scrub_source(d.get("source", "")),
-                    "reason": reason,
+                    "reason": _scrub_string(reason),
                 }
             )
             _DROP_COUNTER[reason] = _DROP_COUNTER.get(reason, 0) + 1

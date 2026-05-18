@@ -82,7 +82,12 @@ def test_persona_manager_invalid_yaml(tmp_path):
 
 
 def test_v1_shape_raises_system_exit_2(tmp_path):
-    """v1-shape file (revelation_priorities at top-level, no topics/embedding_model) → exit 2."""
+    """v1-shape file (revelation_priorities at top-level, no topics/embedding_model) → exit 2
+    via emit_envelope with code='unsupported_persona_schema'."""
+    import io
+    import json
+    from unittest.mock import patch
+
     persona_dir = tmp_path / "personas"
     persona_dir.mkdir()
     v1_data = {
@@ -98,9 +103,20 @@ def test_v1_shape_raises_system_exit_2(tmp_path):
         yaml.dump(v1_data, f)
 
     manager = PersonaManager(config_dir=persona_dir)
-    with pytest.raises(SystemExit) as exc_info:
-        manager.reload()
-    assert exc_info.value.code == 2
+    buf = io.StringIO()
+    with patch("sys.stderr", buf):
+        with pytest.raises(SystemExit) as exc_info:
+            manager.reload()
+
+    assert exc_info.value.code == 2, f"Expected exit code 2, got {exc_info.value.code}"
+
+    # Verify emit_envelope was called (not a raw logger.error JSON string)
+    output = buf.getvalue().strip()
+    assert output, "emit_envelope must have written to stderr"
+    envelope = json.loads(output)
+    assert envelope["code"] == "unsupported_persona_schema"
+    assert envelope["level"] == "error"
+    assert envelope["stage"] == "persona_load"
 
 
 def test_invalid_v2_schema_raises_validation_error(tmp_path):

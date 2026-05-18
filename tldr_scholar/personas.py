@@ -136,12 +136,21 @@ class PersonaManager:
                 continue
 
             if _is_v1_shape(data):
-                logger.error(
-                    '{"level":"error","stage":"load","code":"unsupported_persona_schema",'
-                    f'"message":"v1-shape persona file detected: {path.name}. '
-                    'Delete and re-derive with tldr-scholar-synthesize-style."}'
+                from tldr_scholar.error_contract import (  # noqa: PLC0415
+                    emit_envelope,
+                    EXIT_CODES,
                 )
-                sys.exit(2)
+                emit_envelope(
+                    level="error",
+                    stage="persona_load",
+                    code="unsupported_persona_schema",
+                    message=(
+                        "v1 persona schema detected; v1 is no longer supported. "
+                        "Regenerate via synthesize-style."
+                    ),
+                    drops=[{"source": path.name, "reason": "v1_shape"}],
+                )
+                sys.exit(EXIT_CODES["v2_schema_fail"])
 
             # Use filename (minus extension) as persona name if not in YAML
             name = data.get("name", path.stem)
