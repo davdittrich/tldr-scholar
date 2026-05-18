@@ -335,47 +335,59 @@ class TestBuildSystemPromptBlend:
         # topic-a's item should dominate
         assert "a-point" in prompt
 
-    def test_multi_topic_top_k_enforced(self, tmp_path):
-        """5-topic persona: only top-K=3 retained in blend."""
+    def test_multi_topic_top_k_enforced(self, tmp_path, monkeypatch):
+        """4 topics all pass _MIN_WEIGHT=0.1; top-K=3 drops the 4th."""
         dim = 384
-        topics = {}
-        for idx in range(5):
-            topics[f"t{idx}"] = _make_topic(
-                f"t{idx}",
-                _unit_vec(dim, idx),
-                revelation_priorities=[f"point-{idx}"],
-            )
-        persona_dict = _v2_persona_dict("five", topics)
+        # Create 4 topics with unique identifying items.
+        topics = {
+            "t0": _make_topic("t0", _unit_vec(dim, 0), revelation_priorities=["unique-item-0"]),
+            "t1": _make_topic("t1", _unit_vec(dim, 1), revelation_priorities=["unique-item-1"]),
+            "t2": _make_topic("t2", _unit_vec(dim, 2), revelation_priorities=["unique-item-2"]),
+            "t3": _make_topic("t3", _unit_vec(dim, 3), revelation_priorities=["unique-item-3"]),
+        }
+
+        # Mock _cosine_sim to return controlled similarities: [0.9, 0.85, 0.8, 0.75]
+        # After softmax(τ=0.3), all weights exceed _MIN_WEIGHT=0.1:
+        # exp(0.9/0.3)≈20.1, exp(0.85/0.3)≈17.0, exp(0.8/0.3)≈14.4, exp(0.75/0.3)≈12.2; sum≈63.7
+        # weights ≈ [0.316, 0.267, 0.227, 0.192] — all > 0.1 ✓
+        sims_iter = iter([0.9, 0.85, 0.8, 0.75])
+        monkeypatch.setattr(
+            "tldr_scholar.prompts._cosine_sim",
+            lambda a, b: next(sims_iter),
+        )
+        monkeypatch.setattr(
+            "tldr_scholar.topic_cluster.embed_text",
+            lambda t: [0.0] * dim,
+        )
+
+        persona_dict = _v2_persona_dict("four", topics)
         persona_dir = tmp_path / "personas"
         persona_dir.mkdir()
-        (persona_dir / "five.yaml").write_text(yaml.dump(persona_dict))
+        (persona_dir / "four.yaml").write_text(yaml.dump(persona_dict))
 
         builder = PromptBuilder()
         builder._persona_manager.config_dir = persona_dir
         builder._persona_manager.reload()
 
-        # src_vec = unit vec at index 0: topic t0 dominates, others get
-        # weight distributed via softmax τ=0.3 over cosine sims.
-        # With 5 unit vecs, sims are: t0=1.0, others=0.0.
-        # softmax([1,0,0,0,0], τ=0.3) → t0 dominates, others get equal small weight
-        # After τ=0.3 softmax: exp(1/0.3)=exp(3.333)≈28.0; exp(0/0.3)=1.0
-        # w_t0 = 28/(28+4*1) ≈ 0.875 → well above 0.1
-        # w_others = 1/32 ≈ 0.031 → below 0.1 → dropped
-        # So only t0 retained. That's ≤ K=3, so all retained ≤ 3.
-        # The assertion is: the blended prompt doesn't contain MORE than K topics' items.
-        src_vec = _unit_vec(dim, 0)
-        with patch("tldr_scholar.topic_cluster.embed_text", return_value=src_vec):
-            prompt = builder.build_system_prompt(
-                mode="scientific",
-                max_chars=500,
-                focus="",
-                hashtag_instruction="",
-                persona="five",
-                text="word " * 400,
-            )
+        # Debug: Check loaded persona
+        persona_cfg = builder._persona_manager.get_persona("four")
+        assert len(persona_cfg.topics) == 4, f"Expected 4 topics, got {len(persona_cfg.topics)}"
 
-        # t0 is the dominant topic
-        assert "point-0" in prompt
+        # Must pass >= 300 words to trigger topic blending logic
+        prompt = builder.build_system_prompt(
+            mode="scientific",
+            max_chars=500,
+            focus="",
+            hashtag_instruction="",
+            persona="four",
+            text="word " * 400,
+        )
+
+        # Top-K=3 cap: exactly 3 topics' items appear, the 4th (lowest weight) is absent.
+        assert "unique-item-0" in prompt, "top topic (highest weight) must appear"
+        assert "unique-item-1" in prompt, "2nd topic must appear"
+        assert "unique-item-2" in prompt, "3rd topic must appear"
+        assert "unique-item-3" not in prompt, "4th topic (lowest weight) must be dropped by top-K=3"
 
     def test_multi_topic_low_similarity_topic_dropped(self, tmp_path):
         """Topic with weight < 0.1 after softmax is excluded from blend."""
