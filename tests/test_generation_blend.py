@@ -517,6 +517,59 @@ class TestBuildSystemPromptBlend:
         result = _build_with_persona(tmp_path, persona_dict, "word " * 10)
         assert "should-not-appear" not in result
 
+    def test_mixed_global_and_real_topics_does_not_crash(self, tmp_path):
+        """Persona with one real topic + one _global (empty centroid) must not crash.
+
+        The _global topic has an empty centroid ([]) while the real topic has a
+        proper 384-d centroid.  _cosine_sim uses zip(..., strict=True) which
+        raises ValueError on a length mismatch, so the filter introduced in
+        tldr-scholar-58f.2 must drop _global before the similarity computation.
+        """
+        dim = 384
+        real_centroid = [1.0 / dim] * dim
+        topics = {
+            "econ": _make_topic(
+                "econ",
+                real_centroid,
+                revelation_priorities=["item-a"],
+            ),
+            "_global": _make_topic(
+                "_global",
+                [],  # empty centroid — triggers the mismatch guard
+            ),
+        }
+        persona_dict = _v2_persona_dict("mixed-global", topics)
+
+        with patch("tldr_scholar.topic_cluster.embed_text") as mock_embed, \
+             patch("tldr_scholar.error_contract.emit_envelope") as mock_emit:
+            mock_embed.return_value = real_centroid
+            builder = PromptBuilder()
+            persona_dir = tmp_path / "personas"
+            persona_dir.mkdir(exist_ok=True)
+            (persona_dir / "mixed-global.yaml").write_text(yaml.dump(persona_dict))
+            builder._persona_manager.config_dir = persona_dir
+            builder._persona_manager.reload()
+
+            # Must not raise
+            prompt = builder.build_system_prompt(
+                mode="scientific",
+                max_chars=500,
+                focus="",
+                hashtag_instruction="",
+                persona="mixed-global",
+                text="word " * 400,
+            )
+
+        # _global was dropped; real topic's content should appear
+        assert "item-a" in prompt
+        # A warn envelope must have been emitted for the dropped _global
+        mock_emit.assert_called_once()
+        emit_kwargs = mock_emit.call_args.kwargs
+        assert emit_kwargs.get("level") == "warn"
+        assert emit_kwargs.get("code") == "topic_centroid_mismatch"
+        dropped = emit_kwargs.get("drops", [])
+        assert any(d["source"] == "_global" for d in dropped)
+
 
 # ---------------------------------------------------------------------------
 # AST guard: purity

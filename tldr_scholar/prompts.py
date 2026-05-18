@@ -414,26 +414,56 @@ class PromptBuilder:
                     else:
                         # Multi-topic: softmax-weighted blend
                         src_vec = _embed_text(text)
-                        topic_items = list(topics.items())
-                        sims = [
-                            _cosine_sim(src_vec, tp.centroid)
-                            for _, tp in topic_items
-                        ]
-                        weights = _softmax(sims, _SOFTMAX_TAU)
-                        weighted = [
-                            (w, tp)
-                            for w, (_, tp) in zip(weights, topic_items)
-                            if w >= _MIN_WEIGHT
-                        ]
-                        weighted.sort(key=lambda x: -x[0])
-                        weighted = weighted[:_TOP_K]
-                        priorities_list = _blend_lists(
-                            [(w, tp.revelation_priorities) for w, tp in weighted]
-                        )
-                        suppressions_list = _blend_lists(
-                            [(w, tp.suppression_rules) for w, tp in weighted]
-                        )
-                        rhetorical = weighted[0][1].rhetorical_strategy if weighted else ""
+                        src_len = len(src_vec)
+                        # Filter topics whose centroids are missing or wrong dimension.
+                        valid_topic_items: list[tuple[str, object]] = []
+                        dropped_topics: list[dict] = []
+                        for label, tp in topics.items():
+                            centroid = tp.centroid
+                            if not centroid or len(centroid) != src_len:
+                                dropped_topics.append(
+                                    {
+                                        "source": label,
+                                        "reason": (
+                                            f"centroid_len={len(centroid)}_vs_src={src_len}"
+                                        ),
+                                    }
+                                )
+                            else:
+                                valid_topic_items.append((label, tp))
+                        if dropped_topics:
+                            emit_envelope(
+                                level="warn",
+                                stage="generate",
+                                code="topic_centroid_mismatch",
+                                drops=dropped_topics,
+                            )
+                        if not valid_topic_items:
+                            # All topics were filtered — no priority/suppression available
+                            priorities_list = []
+                            suppressions_list = []
+                            rhetorical = ""
+                        else:
+                            topic_items = valid_topic_items
+                            sims = [
+                                _cosine_sim(src_vec, tp.centroid)
+                                for _, tp in topic_items
+                            ]
+                            weights = _softmax(sims, _SOFTMAX_TAU)
+                            weighted = [
+                                (w, tp)
+                                for w, (_, tp) in zip(weights, topic_items)
+                                if w >= _MIN_WEIGHT
+                            ]
+                            weighted.sort(key=lambda x: -x[0])
+                            weighted = weighted[:_TOP_K]
+                            priorities_list = _blend_lists(
+                                [(w, tp.revelation_priorities) for w, tp in weighted]
+                            )
+                            suppressions_list = _blend_lists(
+                                [(w, tp.suppression_rules) for w, tp in weighted]
+                            )
+                            rhetorical = weighted[0][1].rhetorical_strategy if weighted else ""
 
                     if priorities_list:
                         priorities = ", ".join(priorities_list)
