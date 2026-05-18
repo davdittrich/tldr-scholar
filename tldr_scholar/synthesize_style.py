@@ -8,6 +8,8 @@ CLI flags:
     --max-posts N       sample size cap (default 200)
     --concurrency N     parallel link fetches (default 5)
     --skip-links        skip article ingestion, use post bodies only (default off)
+    --full-baselines    run all 3 baselines per source (claims+extractive+abstractive);
+                        default is claims-only to minimise LLM cost
 """
 import argparse
 import sys
@@ -26,6 +28,9 @@ from tldr_scholar.ingest import ingest
 from tldr_scholar.scrapers import ScraperFactory, SocialPost, UnknownURLError
 from tldr_scholar.ingestion_engine import LinkIngester
 from tldr_scholar.prompts import DECOMPOSITION_PROMPT, CORRELATION_PROMPT, DEEP_SYNTHESIS_PROMPT
+from tldr_scholar.source_baseline import build_baselines
+from tldr_scholar.correlator import correlate_against_baselines
+from tldr_scholar._envelope import emit as emit_envelope
 from tldr_scholar.preflight import check_embedding_model_cached
 
 try:
@@ -66,6 +71,13 @@ async def call_gemini(prompt: str, label: str) -> Any:
     except yaml.YAMLError as e:
         logger.error(f"YAML Parse Error in {label}: {e}")
         return None
+
+def _llm_caller():
+    """Return an async callable(prompt: str) -> str for source_baseline / correlator."""
+    async def _call(prompt: str) -> str:
+        result, _ = summarize_via_gemini(text="", prompt=prompt, timeout=180)
+        return result or ""
+    return _call
 
 async def classify_domains(posts: list[SocialPost]) -> dict[str, list[int]]:
     # Batch classification for up to 200 posts (Mastodon limit approx)
@@ -150,15 +162,29 @@ async def run_synthesis(args):
     final_reports = []
     for i, (source_text, post_text) in enumerate(corpus):
         logger.info(f">>> Analyzing Pair {i+1}/{len(corpus)}")
-        statements = await decompose_source(source_text)
-        if not statements:
-            logger.debug(f"Skipping pair {i+1}: decompose_source returned no statements")
+        baselines = await build_baselines(
+            source_text,
+            full=getattr(args, "full_baselines", False),
+            llm_call=_llm_caller(),
+        )
+        if baselines.claims is None and baselines.extractive_summary is None and baselines.abstractive_summary is None:
+            emit_envelope(
+                level="warn",
+                stage="source_baseline",
+                code="all_baselines_failed",
+                msg="All 3 baselines failed for source; dropping from corpus.",
+                drops=[{"source": f"pair_{i+1}"}],
+            )
             continue
-        delta = await correlate_post_to_source(statements, post_text)
-        if delta:
-            final_reports.append(delta)
+        delta_records = await correlate_against_baselines(
+            post_text,
+            baselines,
+            llm_call=_llm_caller(),
+        )
+        if delta_records:
+            final_reports.extend(delta_records)
         else:
-            logger.debug(f"Skipping pair {i+1}: correlate_post_to_source returned no delta")
+            logger.debug(f"Skipping pair {i+1}: all correlations returned no delta")
 
     # 6. Synthesis
     synth_data = await synthesize_deep_profile(final_reports)
@@ -189,6 +215,8 @@ def main():
                         help="Manual eval holdout per topic (default: 5).")
     parser.add_argument("--concurrency", type=int, default=5)
     parser.add_argument("--skip-links", action="store_true", help="Skip article ingestion; use post bodies only.")
+    parser.add_argument("--full-baselines", dest="full_baselines", action="store_true", default=False,
+                        help="Run all 3 baselines (claims+extractive+abstractive). Default: claims only.")
     args = parser.parse_args()
     asyncio.run(run_synthesis(args))
 
