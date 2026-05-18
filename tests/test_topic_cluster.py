@@ -170,3 +170,104 @@ def test_cluster_posts_returns_labels_and_centroids(monkeypatch):
         assert isinstance(key, str)
         assert isinstance(vec, list)
         assert len(vec) == 384
+
+
+def test_hdbscan_failure_emits_warn_envelope(monkeypatch, capsys):
+    """When HDBSCAN fails, should emit warn envelope before fallback."""
+    import json
+    import sys
+    import types
+    
+    # Setup fake ST
+    fake_st = types.ModuleType("sentence_transformers")
+    class FakeModel:
+        def encode(self, texts, **kw):
+            import numpy as np
+            return [np.ones(384) for _ in texts]
+    fake_st.SentenceTransformer = lambda *a, **kw: FakeModel()
+    monkeypatch.setitem(sys.modules, "sentence_transformers", fake_st)
+    
+    # Mock HDBSCAN to fail
+    fake_hdbscan = types.ModuleType("hdbscan")
+    class FailingHDBSCAN:
+        def __init__(self, **kw):
+            pass
+        def fit_predict(self, X):
+            raise RuntimeError("HDBSCAN clustering failed")
+    fake_hdbscan.HDBSCAN = FailingHDBSCAN
+    monkeypatch.setitem(sys.modules, "hdbscan", fake_hdbscan)
+    
+    # Clear module cache and reimport
+    for mod in list(sys.modules.keys()):
+        if mod.startswith(("tldr_scholar.topic_cluster", "bertopic")):
+            sys.modules.pop(mod, None)
+    
+    import tldr_scholar.topic_cluster as tc
+    tc._MODEL = FakeModel()
+    
+    posts = ["hello world", "foo bar"]
+    labels, centroids = tc.cluster_posts(posts)
+    
+    # Check stderr for warn envelope
+    captured = capsys.readouterr()
+    envelope_lines = [l for l in captured.err.split('\n') if l.strip()]
+    assert len(envelope_lines) > 0, "Expected warn envelope on stderr"
+    
+    env = json.loads(envelope_lines[0])
+    assert env["level"] == "warn"
+    assert env["stage"] == "cluster"
+    assert env["code"] == "hdbscan_failed"
+
+
+def test_bertopic_failure_emits_warn_envelope(monkeypatch, capsys):
+    """When bertopic labeling fails, should emit warn envelope before fallback."""
+    import json
+    import sys
+    import types
+    
+    # Setup fake ST
+    fake_st = types.ModuleType("sentence_transformers")
+    class FakeModel:
+        def encode(self, texts, **kw):
+            import numpy as np
+            return [np.ones(384) for _ in texts]
+    fake_st.SentenceTransformer = lambda *a, **kw: FakeModel()
+    monkeypatch.setitem(sys.modules, "sentence_transformers", fake_st)
+    
+    # Mock HDBSCAN to succeed but return multiple clusters
+    fake_hdbscan = types.ModuleType("hdbscan")
+    class WorkingHDBSCAN:
+        def __init__(self, **kw):
+            pass
+        def fit_predict(self, X):
+            import numpy as np
+            return np.array([0, 1, 0, 1, 2])
+    fake_hdbscan.HDBSCAN = WorkingHDBSCAN
+    monkeypatch.setitem(sys.modules, "hdbscan", fake_hdbscan)
+    
+    # Clear module cache and reimport
+    for mod in list(sys.modules.keys()):
+        if mod.startswith(("tldr_scholar.topic_cluster", "bertopic")):
+            sys.modules.pop(mod, None)
+    
+    import tldr_scholar.topic_cluster as tc
+    tc._MODEL = FakeModel()
+    
+    # Patch _label_clusters to fail
+    original_label = tc._label_clusters
+    def failing_label(*a, **kw):
+        raise ValueError("bertopic labeling failed")
+    tc._label_clusters = failing_label
+    
+    posts = ["hello", "world", "foo", "bar", "baz"]
+    labels, centroids = tc.cluster_posts(posts)
+    
+    # Check stderr for warn envelope
+    captured = capsys.readouterr()
+    envelope_lines = [l for l in captured.err.split('\n') if l.strip()]
+    assert any(
+        json.loads(l).get("code") == "bertopic_failed"
+        for l in envelope_lines
+        if l.strip()
+    ), f"Expected bertopic_failed envelope. Got: {envelope_lines}"
+

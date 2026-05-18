@@ -97,8 +97,15 @@ def cluster_posts(
         # metric anyway).  We intentionally do NOT mutate np.random.seed() here —
         # callers that need reproducible downstream operations should manage their own RNG.
         raw_labels: list[int] = clusterer.fit_predict(emb_arr).tolist()
-    except Exception:
+    except Exception as exc:
         # Fallback: single global cluster
+        from tldr_scholar.error_contract import emit_envelope  # lazy to avoid cycle
+        emit_envelope(
+            level="warn",
+            stage="cluster",
+            code="hdbscan_failed",
+            message=f"HDBSCAN failed: {exc.__class__.__name__}; falling back to single _global cluster"
+        )
         raw_labels = [0] * len(posts)
 
     # Unique cluster ids (exclude noise = -1)
@@ -114,8 +121,15 @@ def cluster_posts(
     cluster_labels_map: dict[int, str] = {}
     try:
         cluster_labels_map = _label_clusters(posts, raw_labels, unique_ids)
-    except Exception:
+    except Exception as exc:
         # Fallback: numeric labels
+        from tldr_scholar.error_contract import emit_envelope  # lazy to avoid cycle
+        emit_envelope(
+            level="warn",
+            stage="cluster",
+            code="bertopic_failed",
+            message=f"bertopic labeling failed: {exc.__class__.__name__}; falling back to numeric labels"
+        )
         for cid in unique_ids:
             cluster_labels_map[cid] = f"topic_{cid}"
 
