@@ -345,7 +345,7 @@ async def run_synthesis(args):
         # Propagate per-topic failures to persona status (tldr-scholar-58f.5).
         # aggregate_topic returns (TopicProfile, bool); False means degraded/fallback.
         if topic_ok and not all(topic_ok):
-            incomplete_stages.append("aggregate_topic_partial")
+            incomplete_stages.append("aggregate_topic:partial")
 
         # If no topics at all, create a _global fallback so Persona.topics is non-empty
         if not topics:
@@ -361,7 +361,7 @@ async def run_synthesis(args):
 
         # aggregate_global returns (dict, success); signal failure if parse failed
         if not global_ok:
-            incomplete_stages.append("aggregate_global_failed")
+            incomplete_stages.append("aggregate_global:failed")
 
         try:
             cache.put("aggregate", _agg_key, {

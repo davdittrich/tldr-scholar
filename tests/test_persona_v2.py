@@ -91,7 +91,7 @@ def test_incomplete_persona_roundtrip(tmp_path: Path) -> None:
     persona = _make_persona(
         name="partial_dave",
         status="incomplete",
-        incomplete_stages=["aggregate_topic"],
+        incomplete_stages=["aggregate_topic:partial"],
     )
 
     persona_dir = tmp_path / "personas"
@@ -105,6 +105,6 @@ def test_incomplete_persona_roundtrip(tmp_path: Path) -> None:
     assert loaded.status == "incomplete", (
         f"status must survive round-trip; got {loaded.status!r}"
     )
-    assert "aggregate_topic" in loaded.incomplete_stages, (
+    assert "aggregate_topic:partial" in loaded.incomplete_stages, (
         f"incomplete_stages must survive round-trip; got {loaded.incomplete_stages!r}"
     )

@@ -185,7 +185,7 @@ class TestPersonaStatusOnTopicFailure:
     @pytest.mark.asyncio
     async def test_persona_status_incomplete_when_any_topic_fails(self):
         """If aggregate_topic returns False for any topic, persona.status must be 'incomplete'
-        and 'aggregate_topic_partial' must appear in incomplete_stages."""
+        and 'aggregate_topic:partial' must appear in incomplete_stages."""
         from tldr_scholar.synthesize_style import run_synthesis
         from tldr_scholar.personas import TopicProfile
 
@@ -255,10 +255,10 @@ class TestPersonaStatusOnTopicFailure:
             topic_outcomes = [True, False, True]
 
             # Directly test the status-setting logic: if any outcome is False,
-            # status must be "incomplete" with "aggregate_topic_partial" in stages.
+            # status must be "incomplete" with "aggregate_topic:partial" in stages.
             incomplete_stages: list[str] = []
             if not all(topic_outcomes):
-                incomplete_stages.append("aggregate_topic_partial")
+                incomplete_stages.append("aggregate_topic:partial")
 
             final_status = "incomplete" if incomplete_stages else "complete"
 
@@ -281,8 +281,8 @@ class TestPersonaStatusOnTopicFailure:
             assert data["status"] == "incomplete", (
                 f"Expected status=incomplete when a topic aggregation fails, got {data['status']!r}"
             )
-            assert "aggregate_topic_partial" in data.get("incomplete_stages", []), (
-                f"Expected 'aggregate_topic_partial' in incomplete_stages, got {data.get('incomplete_stages')}"
+            assert "aggregate_topic:partial" in data.get("incomplete_stages", []), (
+                f"Expected 'aggregate_topic:partial' in incomplete_stages, got {data.get('incomplete_stages')}"
             )
 
     @pytest.mark.asyncio
@@ -300,7 +300,7 @@ class TestPersonaStatusOnTopicFailure:
 
         incomplete_stages: list[str] = []
         if not all(topic_outcomes):
-            incomplete_stages.append("aggregate_topic_partial")
+            incomplete_stages.append("aggregate_topic:partial")
 
         final_status = "incomplete" if incomplete_stages else "complete"
 
