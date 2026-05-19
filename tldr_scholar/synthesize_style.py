@@ -4,8 +4,6 @@
 CLI flags:
     source              feed URL (Mastodon/Bluesky) or local samples file
     --name NAME         persona output name (writes to DEFAULT_PERSONA_DIR/<name>.yaml)
-    --months N          lookback window in months (default 12)
-    --max-posts N       sample size cap (default 200)
     --concurrency N     parallel link fetches (default 5)
     --skip-links        skip article ingestion, use post bodies only (default off)
     --full-baselines    run all 3 baselines per source (claims+extractive+abstractive);
@@ -27,10 +25,8 @@ from loguru import logger
 from tldr_scholar.config import DEFAULT_PERSONA_DIR
 from tldr_scholar.corpus_cache import CorpusCache
 from tldr_scholar.corpus_sampler import build_corpus
-from tldr_scholar.ingest import ingest
 from tldr_scholar.scrapers import ScraperFactory, SocialPost, UnknownURLError
 from tldr_scholar.ingestion_engine import LinkIngester
-from tldr_scholar.prompts import DEEP_SYNTHESIS_PROMPT
 from tldr_scholar.source_baseline import build_baselines
 from tldr_scholar.correlator import correlate_against_baselines
 from tldr_scholar.error_contract import emit_envelope, emit_drop_summary, EXIT_CODES
@@ -49,16 +45,6 @@ except ImportError:
 CACHE_ROOT = Path.home() / ".cache" / "tldr-scholar" / "stages"
 
 # Prompts
-CLASSIFICATION_PROMPT = """\
-Analyze the following list of social media posts.
-Group them into logical "Substantive Domains" (e.g. Economics, Tech, Politics, Ethics).
-
-Posts:
-{posts}
-
-Return ONLY a YAML dictionary mapping "domain_name" to a list of post indices (0-indexed).
-"""
-
 async def call_gemini(prompt: str, label: str) -> Any:
     logger.debug(f"[GEMINI CALL: {label}]")
     logger.debug("-" * 20)
@@ -87,20 +73,6 @@ def _llm_caller():
         result, _ = summarize_via_gemini(text="", prompt=prompt, timeout=180)
         return result or ""
     return _call
-
-async def classify_domains(posts: list[SocialPost]) -> dict[str, list[int]]:
-    # Batch classification for up to 200 posts (Mastodon limit approx)
-    limit = 200
-    post_texts = "\n".join([f"{i}: {p.text[:150]}" for i, p in enumerate(posts[:limit])])
-    prompt = CLASSIFICATION_PROMPT.format(posts=post_texts)
-    data = await call_gemini(prompt, "Classification")
-    return data if isinstance(data, dict) else {}
-
-async def synthesize_deep_profile(reports: list[dict]) -> dict:
-    reports_yaml = yaml.dump(reports)
-    prompt = DEEP_SYNTHESIS_PROMPT.format(reports=reports_yaml)
-    data = await call_gemini(prompt, "Synthesis")
-    return data if isinstance(data, dict) else {}
 
 async def run_synthesis(args):
     # Pre-flight: warn if embedding model not cached (non-fatal)
@@ -392,8 +364,6 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("source")
     parser.add_argument("--name")
-    parser.add_argument("--months", type=int, default=12)
-    parser.add_argument("--max-posts", type=int, default=200)
     parser.add_argument("--window-months", dest="window_months", type=int, default=12,
                         help="Scrape window in months (default: 12).")
     parser.add_argument("--n-train", dest="n_train", type=int, default=200,

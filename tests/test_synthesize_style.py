@@ -144,6 +144,7 @@ class TestSynthesisYamlPlainDicts:
         )
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(reason="dead-code path removed in tldr-scholar-bbi; rewrite owned by tldr-scholar-gi5")
     async def test_synthesize_deep_profile_prompt_has_no_pydantic_tags(self):
         """synthesize_deep_profile with model_dump() input must yield plain-dict YAML in prompt."""
         from tldr_scholar.synthesize_style import synthesize_deep_profile
