@@ -210,10 +210,10 @@ Exit codes:
 | 1 | unexpected internal error |
 | 2 | v2 schema validation failure on persona load |
 | 3 | embedding model mismatch at generation time |
-| 4 | LLM API failure (all retries exhausted) — persona written with `status: incomplete` flag |
+| 4 | setup-time / unrecoverable I/O error (e.g., output file write fails) — persona may not be written |
 | 5 | empty corpus after scrape + injection filter |
 
-**Partial-write semantics for exit code 4:** when LLM API fails after retries, whatever stages completed are persisted. Persona YAML gains top-level field `status: "incomplete"` and `incomplete_stages: list[str]` listing which stages did not finish (e.g., `["aggregate"]` if clustering + correlation succeeded but per-topic aggregation died). Loader accepts incomplete personas at generation time but emits warn envelope `persona_incomplete` on every gen call. User resumes by re-running with `--reset=<failed-stage>` to pick up from the failure point.
+**Partial-write semantics for graceful degradation:** when per-stage LLM operations fail (e.g., per-topic aggregation, global synthesis), the aggregator returns a fallback result and the persona proceeds with `status: "incomplete"` and `incomplete_stages: list[str]` listing affected stages (e.g., `["aggregate_topic_partial"]` if per-topic aggregation had parse failures; `["aggregate_global"]` if global synthesis failed). Loader accepts incomplete personas at generation time but emits warn envelope `persona_incomplete` on every gen call. User resumes by re-running with `--reset=<failed-stage>` to pick up from the failure point.
 
 End-of-run summary (always emitted on stdout, even on exit 0) lists count of dropped sources/baselines with reasons.
 
@@ -226,6 +226,7 @@ End-of-run summary (always emitted on stdout, even on exit 0) lists count of dro
 | sumy summary fails | drop extractive baseline for that source, continue with 2 baselines (warn envelope) |
 | Gemini abstractive fails | drop abstractive baseline, continue with claims + extractive (warn envelope) |
 | Gemini correlation fails | drop DeltaRecord (warn envelope, source listed in drops[]) |
+| Per-topic or global aggregation fails | emit warn envelope, set `status=incomplete` in persona YAML with corresponding stage in `incomplete_stages` (e.g., `"aggregate_topic_partial"` or `"aggregate_global"`), and exit 0 (graceful degradation) |
 | All baselines fail for a source | drop source from corpus entirely (warn envelope, source listed) |
 | Centroid model mismatch at gen | error envelope `embedding_model_mismatch`, exit 3 |
 | Post matches injection-marker regex | drop post pre-clustering (warn envelope `injection_filter_match`) |

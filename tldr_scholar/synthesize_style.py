@@ -328,46 +328,19 @@ async def run_synthesis(args):
         # Build TopicProfile per topic
         topics: dict[str, TopicProfile] = {}
         topic_ok: list[bool] = []
-        try:
-            for tlabel in set(list(topic_to_deltas.keys()) + list(topic_to_posts.keys())):
-                centroid = topic_centroids.get(tlabel, [])
-                posts_for_topic = list(topic_to_posts.get(tlabel, []))
-                deltas_for_topic = list(topic_to_deltas.get(tlabel, []))
-                tp, ok = await aggregate_topic(
-                    label=tlabel,
-                    centroid=centroid,
-                    posts=posts_for_topic,
-                    deltas=deltas_for_topic,
-                    llm_call=caller,
-                )
-                topics[tlabel] = tp
-                topic_ok.append(ok)
-        except Exception as exc:  # stage boundary: LLM API exhaustion
-            # Re-raise programming errors so bugs surface immediately instead of
-            # being mis-labelled as llm_exhausted (tldr-scholar-58f.4).
-            if isinstance(exc, (ImportError, AttributeError, TypeError, NameError,
-                                KeyError, AssertionError)):
-                raise
-            incomplete_stages.append("aggregate_topic")
-            partial = Persona(
-                name=persona_name,
-                embedding_model=EMBEDDING_MODEL_NAME,
-                status="incomplete",
-                incomplete_stages=incomplete_stages,
-                topics=topics or {"_global": TopicProfile(
-                    label="_global", centroid=[], sample_size=0,
-                    posts=[p.text for p in sampled_posts],
-                )},
+        for tlabel in set(list(topic_to_deltas.keys()) + list(topic_to_posts.keys())):
+            centroid = topic_centroids.get(tlabel, [])
+            posts_for_topic = list(topic_to_posts.get(tlabel, []))
+            deltas_for_topic = list(topic_to_deltas.get(tlabel, []))
+            tp, ok = await aggregate_topic(
+                label=tlabel,
+                centroid=centroid,
+                posts=posts_for_topic,
+                deltas=deltas_for_topic,
+                llm_call=caller,
             )
-            write_persona_yaml(partial, output_path)
-            emit_envelope(
-                level="error",
-                stage="aggregate_topic",
-                code="llm_exhausted",
-                message="LLM API exhausted during per-topic aggregation; partial persona written.",
-            )
-            emit_drop_summary()
-            sys.exit(EXIT_CODES["llm_exhausted"])
+            topics[tlabel] = tp
+            topic_ok.append(ok)
 
         # Propagate per-topic failures to persona status (tldr-scholar-58f.5).
         # aggregate_topic returns (TopicProfile, bool); False means degraded/fallback.
@@ -384,31 +357,7 @@ async def run_synthesis(args):
             )
 
         # Global synthesis
-        try:
-            global_fields, global_ok = await aggregate_global(final_reports, caller)
-        except Exception as exc:  # stage boundary: LLM API exhaustion
-            # Re-raise programming errors so bugs surface immediately instead of
-            # being mis-labelled as llm_exhausted (tldr-scholar-58f.4).
-            if isinstance(exc, (ImportError, AttributeError, TypeError, NameError,
-                                KeyError, AssertionError)):
-                raise
-            incomplete_stages.append("aggregate_global")
-            partial = Persona(
-                name=persona_name,
-                embedding_model=EMBEDDING_MODEL_NAME,
-                status="incomplete",
-                incomplete_stages=incomplete_stages,
-                topics=topics,
-            )
-            write_persona_yaml(partial, output_path)
-            emit_envelope(
-                level="error",
-                stage="aggregate_global",
-                code="llm_exhausted",
-                message="LLM API exhausted during global synthesis; partial persona written.",
-            )
-            emit_drop_summary()
-            sys.exit(EXIT_CODES["llm_exhausted"])
+        global_fields, global_ok = await aggregate_global(final_reports, caller)
 
         # aggregate_global returns (dict, success); signal failure if parse failed
         if not global_ok:
