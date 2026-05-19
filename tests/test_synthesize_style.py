@@ -143,36 +143,10 @@ class TestSynthesisYamlPlainDicts:
             "confirms model_dump() conversion is necessary"
         )
 
-    @pytest.mark.asyncio
-    @pytest.mark.skip(reason="dead-code path removed in tldr-scholar-bbi; rewrite owned by tldr-scholar-gi5")
-    async def test_synthesize_deep_profile_prompt_has_no_pydantic_tags(self):
-        """synthesize_deep_profile with model_dump() input must yield plain-dict YAML in prompt."""
-        from tldr_scholar.synthesize_style import synthesize_deep_profile
-
-        dr = DeltaRecord(
-            baseline_type="claims",
-            statements=["A reduces B."],
-            status_per_statement=["shared"],
-            intent=None,
-        )
-
-        captured_prompts: list[str] = []
-
-        async def capture_call_gemini(prompt: str, label: str):
-            captured_prompts.append(prompt)
-            return {"profile": {}, "confidence": {}}
-
-        with patch("tldr_scholar.synthesize_style.call_gemini", side_effect=capture_call_gemini):
-            await synthesize_deep_profile([dr.model_dump()])
-
-        assert captured_prompts, "call_gemini must be invoked"
-        prompt_text = captured_prompts[0]
-        assert "!!python/" not in prompt_text, (
-            "LLM prompt must not contain Pydantic-tagged YAML; "
-            "DeltaRecords must be converted via model_dump() before yaml.dump()"
-        )
-        assert "baseline_type" in prompt_text
-        assert "claims" in prompt_text
+    # test_synthesize_deep_profile_prompt_has_no_pydantic_tags deleted in
+    # tldr-scholar-gi5: synthesize_deep_profile() removed in tldr-scholar-bbi.
+    # The yaml.dump regression guard is moot; aggregate_global() uses
+    # [d.model_dump() for d in deltas] directly (WU-3 fix).
 
 
 # ---------------------------------------------------------------------------

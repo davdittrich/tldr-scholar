@@ -21,7 +21,6 @@ async def test_correlate_post_to_source_finds_deltas():
     pass
 
 
-@pytest.mark.asyncio
-@pytest.mark.skip(reason="dead-code path removed in tldr-scholar-bbi; rewrite owned by tldr-scholar-gi5")
-async def test_synthesize_deep_profile():
-    pass
+# test_synthesize_deep_profile deleted in tldr-scholar-gi5:
+# synthesize_deep_profile() was removed in tldr-scholar-bbi (dead code since WU-4).
+# Equivalent aggregate behaviour is covered by test_aggregator.py::test_aggregate_global_*.
