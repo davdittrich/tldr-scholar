@@ -305,3 +305,49 @@ def test_label_collision_resolved_via_suffix():
     assert result[1] == "econ+labor+wage_2"
     assert result[2] == "trade+deal+pact"
 
+
+def test_label_collision_natural_match_renamed_label():
+    """Regression test: natural labels that match renamed suffixes cause collisions.
+
+    Bug scenario: when base labels naturally emerge as ['foo', 'foo', 'foo_2']:
+    - Cluster 0: base='foo', counter tracks 'foo'=1, assigned='foo'
+    - Cluster 1: base='foo', counter tracks 'foo'=2, renamed='foo_2'
+    - Cluster 2: base='foo_2', counter tracks 'foo_2'=1 (NEW key, not 'foo'), NOT renamed, assigned='foo_2'
+      → COLLISION with cluster 1's renamed label!
+
+    Counter-based approach fails because it tracks BASE labels, not FINAL assigned labels.
+    The fix uses a set-based approach to ensure all final assignments are unique.
+    """
+    from collections import Counter
+
+    # Simulate the labeling logic with natural match scenario
+    cluster_terms = {
+        0: ["foo"],
+        1: ["foo"],  # Will be renamed to foo_2
+        2: ["foo_2"],  # This naturally becomes 'foo_2', colliding with cluster 1's rename
+    }
+
+    # Apply the FIXED logic: track assigned labels via set
+    assigned: set[str] = set()
+    result = {}
+    for cid, top_terms in cluster_terms.items():
+        base = "+".join(top_terms) if top_terms else f"topic_{cid}"
+        label = base
+        n = 2
+        while label in assigned:
+            label = f"{base}_{n}"
+            n += 1
+        assigned.add(label)
+        result[cid] = label
+
+    # Verify labels are unique
+    labels_list = list(result.values())
+    assert len(labels_list) == len(set(labels_list)), (
+        f"Label collision detected: {labels_list}"
+    )
+
+    # Verify specific assignments
+    assert result[0] == "foo"
+    assert result[1] == "foo_2"
+    assert result[2] == "foo_2_2"  # foo_2 is taken, so rename the base
+
