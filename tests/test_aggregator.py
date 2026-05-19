@@ -205,6 +205,33 @@ class TestAggregateTopicWarnEnvelope:
         envelope = json.loads(raw.split("\n")[0])
         assert envelope["code"] == "topic_aggregation_failed"
 
+    @pytest.mark.asyncio
+    async def test_aggregate_topic_envelope_reason_is_class_name_not_message(self):
+        """drops[].reason must be exception class name, not exception body
+        (which could carry leaked LLM content)."""
+        async def failing_llm(prompt):
+            raise ValueError("matched on input: SECRET-USER-CONTENT-LEAK")
+
+        stderr_capture = io.StringIO()
+        with patch("sys.stderr", stderr_capture):
+            profile, ok = await aggregate_topic(
+                label="t1",
+                centroid=[0.1] * 384,
+                posts=["post"],
+                deltas=[_make_delta()],
+                llm_call=failing_llm,
+            )
+        assert ok is False
+        raw = stderr_capture.getvalue().strip()
+        assert raw, "Envelope must be written to stderr"
+        envelope = json.loads(raw.split("\n")[0])
+        reason = envelope["drops"][0]["reason"]
+        # Class name present
+        assert "ValueError" in reason, f"Expected 'ValueError' in reason but got: {reason}"
+        # Leaked body absent
+        assert "SECRET-USER-CONTENT-LEAK" not in reason
+        assert "matched on input" not in reason
+
 
 # ---------------------------------------------------------------------------
 # aggregate_topic — JSON parsing and TopicProfile construction

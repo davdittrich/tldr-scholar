@@ -93,7 +93,7 @@ async def aggregate_topic(
         raw = await llm_call(prompt)
     except Exception as exc:
         logger.warning("aggregator: topic=%s LLM call failed — %s", label, exc)
-        _emit_topic_fail(label, str(exc))
+        _emit_topic_fail(label, exc.__class__.__name__)
         return TopicProfile(**base), False
 
     result = _parse_aggregation_result(raw)
